@@ -111,7 +111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    await ensureUser(userId)
+    const handle = await ensureUser(userId)
 
     const [pool] = await db
       .insert(nflPools)
@@ -144,7 +144,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .values({
         poolId: pool.id,
         userId,
-        entryName: (entryName as string)?.trim() || 'My entry',
+        entryName: (entryName as string)?.trim() || handle,
       })
       .returning()
 

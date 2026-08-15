@@ -7,12 +7,18 @@ import { users } from '../src/lib/db/schema.js'
 // account can reach an endpoint before its row lands — in golf that used
 // to fail the pool join outright. Here it would fail joining a pool from
 // an invite link, which is the very first thing an invited user does.
-export async function ensureUser(userId: string): Promise<void> {
+// Returns the display name so callers can default entry names to it.
+//
+// Privacy rule, platform-wide: members are shown by HANDLE, never by
+// legal name. Clerk's username when the instance has usernames enabled,
+// else the email's local part. firstName/lastName are deliberately not
+// in the chain — a pool full of coworkers or in-laws should not be
+// broadcasting real names on a leaderboard.
+export async function ensureUser(userId: string): Promise<string> {
   const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! })
   const user = await clerk.users.getUser(userId)
   const email = user.emailAddresses[0]?.emailAddress || ''
-  const displayName =
-    [user.firstName, user.lastName].filter(Boolean).join(' ') || email.split('@')[0] || 'Player'
+  const displayName = user.username || email.split('@')[0] || 'Player'
   const avatarUrl = user.imageUrl || null
 
   await db
@@ -22,4 +28,6 @@ export async function ensureUser(userId: string): Promise<void> {
       target: users.id,
       set: { email, displayName, avatarUrl },
     })
+
+  return displayName
 }

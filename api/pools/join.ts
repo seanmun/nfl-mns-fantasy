@@ -126,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    await ensureUser(userId)
+    const handle = await ensureUser(userId)
 
     const [entry] = await db
       .insert(nflPoolEntries)
@@ -135,7 +135,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         userId,
         // Default names stay distinguishable when one person holds
         // several, since the leaderboard shows entries, not people.
-        entryName: entryName?.trim() || (mine.length ? `Entry ${mine.length + 1}` : 'My entry'),
+        // Defaults to the member's handle — "My entry" told a standings
+        // page nothing about who it was.
+        entryName: entryName?.trim() || (mine.length ? `${handle} ${mine.length + 1}` : handle),
       })
       .returning()
 
