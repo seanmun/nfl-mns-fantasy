@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createApi, type ApiSlateGame, type SavePick } from '@/lib/api/client'
@@ -106,6 +106,12 @@ export function PoolPicks() {
   return (
     <div className="pb-40">
       <header className="px-4 pt-6 pb-4 border-b border-[var(--color-border)]">
+        <Link
+          to="/"
+          className="inline-flex items-center min-h-[var(--tap-target-min)] font-bold text-[var(--color-accent)]"
+        >
+          &larr; My pools
+        </Link>
         <p className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)]">
           {data.week.label}
         </p>

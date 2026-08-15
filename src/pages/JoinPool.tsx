@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useAuth } from '@clerk/clerk-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuth, useUser } from '@clerk/clerk-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createApi } from '@/lib/api/client'
@@ -11,6 +11,7 @@ import { createApi } from '@/lib/api/client'
 export function JoinPool() {
   const navigate = useNavigate()
   const { getToken } = useAuth()
+  const { isLoaded, isSignedIn } = useUser()
   const api = useMemo(() => createApi(getToken), [getToken])
   const [params] = useSearchParams()
 
@@ -18,6 +19,16 @@ export function JoinPool() {
   const [code, setCode] = useState((params.get('code') ?? '').toUpperCase())
   const inviteToken = params.get('invite') ?? undefined
   const [query, setQuery] = useState('')
+
+  // A share link lands here signed OUT — usually someone brand new.
+  // Joining needs an account, so the only honest first step is sign-up,
+  // and the code has to survive the trip: redirect_url brings them back
+  // to this page with the code still in the URL, prefilled and ready.
+  // Without this, the join button just 401s at the person least equipped
+  // to know why.
+  const backHere = encodeURIComponent(
+    `/join?${code ? `code=${code}` : inviteToken ? `invite=${inviteToken}` : ''}`
+  )
 
   const join = useMutation({
     mutationFn: (body: { joinCode?: string; poolId?: string; inviteToken?: string }) =>
@@ -41,8 +52,34 @@ export function JoinPool() {
         <p className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)] mb-1">
           Join
         </p>
-        <h1 className="text-[1.7rem] font-extrabold leading-tight">Join a pool</h1>
+        <h1 className="text-[1.7rem] font-extrabold leading-tight">
+          {code ? 'You’ve been invited to a pool' : 'Join a pool'}
+        </h1>
+        {code ? (
+          <p className="mt-2 text-[var(--color-muted-foreground)] leading-relaxed">
+            Someone sent you an invite to their NFL pick&rsquo;em pool on MNS
+            Fantasy. Pick games each week, see how you stack up.
+          </p>
+        ) : null}
       </div>
+
+      {isLoaded && !isSignedIn ? (
+        <div className="rounded-xl border-2 border-[var(--color-accent)] bg-[var(--color-card)] p-5 flex flex-col gap-3">
+          <p className="font-semibold">First you need an account — it takes a minute.</p>
+          <Link
+            to={`/sign-up?redirect_url=${backHere}`}
+            className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold"
+          >
+            Sign up, then join
+          </Link>
+          <Link
+            to={`/sign-in?redirect_url=${backHere}`}
+            className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+          >
+            I already have one
+          </Link>
+        </div>
+      ) : null}
 
       {inviteToken ? (
         <div className="rounded-xl border-2 border-[var(--color-accent)] bg-[var(--color-card)] p-5 flex flex-col gap-3">
@@ -57,6 +94,9 @@ export function JoinPool() {
         </div>
       ) : null}
 
+      {/* The forms only render signed in — signed out, every join call
+          would 401, so the sign-up card above is the page. */}
+      {isSignedIn ? (<>
       <section className="flex flex-col gap-3">
         <label className="font-semibold" htmlFor="code">Have a code?</label>
         <p className="text-[0.9rem] text-[var(--color-muted-foreground)] -mt-2">
@@ -110,6 +150,7 @@ export function JoinPool() {
           </p>
         ) : null}
       </section>
+      </>) : null}
     </div>
   )
 }

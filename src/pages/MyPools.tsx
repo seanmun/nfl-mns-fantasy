@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth, useUser } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { createApi } from '@/lib/api/client'
 
 export function MyPools() {
@@ -67,12 +68,27 @@ export function MyPools() {
                 ) : null}
               </div>
               {user?.id === pool.createdBy && pool.joinCode ? (
-                <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
-                  Invite code:{' '}
-                  <b className="font-mono tracking-[0.15em] text-[var(--color-foreground)]">
-                    {pool.joinCode}
-                  </b>
-                </p>
+                <div className="flex flex-col gap-2">
+                  <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
+                    Invite code:{' '}
+                    <b className="font-mono tracking-[0.15em] text-[var(--color-foreground)]">
+                      {pool.joinCode}
+                    </b>
+                  </p>
+                  {/* The link form of the code — /join?code= prefills the
+                      join page, so this is the thing to text people. */}
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        `${window.location.origin}/join?code=${pool.joinCode}`
+                      )
+                      toast.success('Invite link copied — text it to your pool')
+                    }}
+                    className="min-h-[var(--tap-target-min)] px-5 flex items-center justify-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+                  >
+                    Copy invite link
+                  </button>
+                </div>
               ) : null}
             </li>
           ))}
