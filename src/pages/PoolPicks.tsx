@@ -524,9 +524,14 @@ function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame
     if (g.away) nickById.set(g.away.id, g.away.nickname)
   }
 
-  const byEntry = new Map<string, { name: string; picks: ApiOtherPick[] }>()
+  const byEntry = new Map<
+    string,
+    { id: string; name: string; email: string | null; picks: ApiOtherPick[] }
+  >()
   for (const p of others) {
-    const e = byEntry.get(p.entryId) ?? { name: p.entryName, picks: [] }
+    const e =
+      byEntry.get(p.entryId) ??
+      { id: p.entryId, name: p.entryName, email: p.ownerEmail, picks: [] }
     e.picks.push(p)
     byEntry.set(p.entryId, e)
   }
@@ -548,10 +553,19 @@ function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame
       <ul className="px-4 py-3 flex flex-col gap-3">
         {entries.map((e) => (
           <li
-            key={e.name}
+            key={e.id}
             className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3"
           >
-            <b className="block mb-2">{e.name}</b>
+            <b className="block">{e.name}</b>
+            {e.email ? (
+              // Manager-only (the API nulls it for members): which
+              // account owns this entry.
+              <span className="block mb-2 text-[0.8rem] text-[var(--color-muted-foreground)]">
+                {e.email}
+              </span>
+            ) : (
+              <span className="block mb-2" />
+            )}
             <div className="flex flex-wrap gap-2">
               {e.picks.map((p) => {
                 const b = badge(p.result)

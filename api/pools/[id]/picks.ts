@@ -11,6 +11,7 @@ import {
   nflPoolWeeks,
   nflTeams,
   nflWeeks,
+  users,
 } from '../../../src/lib/db/schema.js'
 import { isPickable, isTbdKickoff } from '../../../src/lib/scoring/deadline.js'
 import { currentWeek } from '../../../src/lib/sync/schedule.js'
@@ -146,9 +147,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         )
       )
     const nameById = new Map(allEntries.map((e) => [e.id, e.entryName]))
+
+    // Owner emails, MANAGER-ONLY — QA needs to tell same-named entries
+    // apart; members never see each other's addresses.
+    const emailByEntry = new Map<string, string>()
+    if (ctx.isPoolAdmin && allEntries.length) {
+      const owners = await db
+        .select({ id: users.id, email: users.email })
+        .from(users)
+        .where(inArray(users.id, [...new Set(allEntries.map((e) => e.userId))]))
+      const emailByUser = new Map(owners.map((o) => [o.id, o.email]))
+      for (const e of allEntries) {
+        const em = emailByUser.get(e.userId)
+        if (em) emailByEntry.set(e.id, em)
+      }
+    }
+
     others = rows.map((p) => ({
       entryId: p.entryId,
       entryName: nameById.get(p.entryId) ?? 'Entry',
+      ownerEmail: emailByEntry.get(p.entryId) ?? null,
       gameId: p.gameId,
       selectedTeamId: p.selectedTeamId,
       confidencePoints: p.confidencePoints,

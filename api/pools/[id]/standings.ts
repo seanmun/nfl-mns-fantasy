@@ -7,6 +7,7 @@ import {
   nflPoolEntries,
   nflPoolWeeks,
   nflWeeks,
+  users,
 } from '../../../src/lib/db/schema.js'
 import { rankStandings } from '../../../src/lib/scoring/standings.js'
 
@@ -32,6 +33,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .select()
     .from(nflPoolEntries)
     .where(eq(nflPoolEntries.poolId, poolId))
+
+  // Owner emails, MANAGER-ONLY. A member must never see another
+  // member's email; the manager needs it to tell three entries named
+  // alike apart.
+  const emailByUser = new Map<string, string>()
+  if (ctx.isPoolAdmin && entries.length) {
+    const owners = await db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(inArray(users.id, [...new Set(entries.map((e) => e.userId))]))
+    for (const o of owners) emailByUser.set(o.id, o.email)
+  }
 
   // Only weeks this pool actually runs, in order, with their labels —
   // the column headers of the weekly breakdown.
@@ -78,6 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         rank: r.rank,
         entryId: r.entryId,
         entryName: entry.entryName,
+        ownerEmail: emailByUser.get(entry.userId) ?? null,
         isMine: ctx.entries.some((e) => e.id === r.entryId),
         totalPoints: r.totalPoints,
         keyPickScore: r.keyPickScore,

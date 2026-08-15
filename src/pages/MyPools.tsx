@@ -44,16 +44,24 @@ export function MyPools() {
               key={entry.id}
               className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex flex-col gap-3"
             >
-              <div>
-                <b className="block text-[1.1rem]">{pool.name}</b>
+              {/* The whole card leads to the pool page — standings,
+                  pick status, make/edit picks all live there. */}
+              <Link to={`/pool/${pool.id}`} className="block">
+                <b className="block text-[1.1rem] text-[var(--color-accent)]">{pool.name}</b>
                 <span className="text-[0.9rem] text-[var(--color-muted-foreground)]">
                   {entry.entryName} &middot; {pool.season}
                 </span>
-              </div>
+              </Link>
               <div className="flex flex-wrap gap-2">
                 <Link
-                  to={`/pool/${pool.id}/picks`}
+                  to={`/pool/${pool.id}`}
                   className="min-h-[var(--tap-target-min)] px-5 flex items-center rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-bold"
+                >
+                  Open pool
+                </Link>
+                <Link
+                  to={`/pool/${pool.id}/picks`}
+                  className="min-h-[var(--tap-target-min)] px-5 flex items-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
                 >
                   Make picks
                 </Link>

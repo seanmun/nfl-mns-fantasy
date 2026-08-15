@@ -44,6 +44,8 @@ export interface ApiPick {
 export interface ApiOtherPick {
   entryId: string
   entryName: string
+  // Present only when the caller manages the pool; members get null.
+  ownerEmail: string | null
   gameId: string
   selectedTeamId: string
   confidencePoints: number | null
@@ -158,6 +160,8 @@ export interface StandingsRow {
   rank: number
   entryId: string
   entryName: string
+  // Present only when the caller manages the pool; members get null.
+  ownerEmail: string | null
   isMine: boolean
   totalPoints: number
   keyPickScore: number
