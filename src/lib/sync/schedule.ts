@@ -164,6 +164,73 @@ export async function syncWeek(
   return result
 }
 
+// QA weeks. A 'test' week holds copies of real preseason games whose
+// feed ids carry a `test-` prefix — decoupled from the real rows so a
+// preseason sync can never collide with them on the unique feed-id key.
+// The flip side is that no ordinary sync will ever score them, so this
+// walks the preseason scoreboards and matches events to `test-<id>`.
+// Returns the number of games updated. Zero test games pending = zero
+// ESPN calls, so the regular season never pays for this.
+export async function syncTestWeeks(db: Db, season: number): Promise<number> {
+  const pending = await db
+    .select({
+      id: nflGames.id,
+      scheduleFeedId: nflGames.scheduleFeedId,
+      homeTeamId: nflGames.homeTeamId,
+      awayTeamId: nflGames.awayTeamId,
+      weekId: nflGames.weekId,
+    })
+    .from(nflGames)
+    .innerJoin(nflWeeks, eq(nflWeeks.id, nflGames.weekId))
+    .where(and(eq(nflWeeks.seasonType, 'test' as SeasonType), eq(nflWeeks.season, season)))
+
+  const wanted = new Map(
+    pending
+      .filter((g) => g.scheduleFeedId?.startsWith('test-'))
+      .map((g) => [g.scheduleFeedId!.slice('test-'.length), g])
+  )
+  if (!wanted.size) return 0
+
+  let updated = 0
+  for (let week = 1; week <= 4 && wanted.size > 0; week++) {
+    let board
+    try {
+      board = await getScoreboard(season, 'pre', week)
+    } catch {
+      continue
+    }
+    for (const event of board.events) {
+      const g = wanted.get(event.id)
+      if (!g) continue
+      const comp = event.competitions[0]
+      if (!comp) continue
+
+      const status = toGameStatus(comp)
+      const isFinal = status === 'final'
+      const winner = isFinal ? winnerSide(comp) : null
+
+      await db
+        .update(nflGames)
+        .set({
+          status,
+          homeScore: scoreOf(sideOf(comp, 'home')),
+          awayScore: scoreOf(sideOf(comp, 'away')),
+          // The copy's own team ids, not ESPN's abbreviations — they
+          // were pinned when the copy was made and are already valid.
+          winnerTeamId:
+            winner === 'home' ? g.homeTeamId : winner === 'away' ? g.awayTeamId : null,
+          lastSyncedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(nflGames.id, g.id))
+
+      wanted.delete(event.id)
+      updated++
+    }
+  }
+  return updated
+}
+
 // firstKickoffAt / lastKickoffAt are derived from games, so they stay
 // correct when a game is flexed.
 export async function refreshWeekBounds(db: Db, weekId: string): Promise<void> {

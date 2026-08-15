@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { eq } from 'drizzle-orm'
+import { isNotNull } from 'drizzle-orm'
 import { db } from '../_db.js'
 import { verifyCron } from '../_middleware.js'
-import { nflPoolWeeks, nflPools } from '../../src/lib/db/schema.js'
-import { currentWeek, syncWeek } from '../../src/lib/sync/schedule.js'
+import { nflPoolWeeks } from '../../src/lib/db/schema.js'
+import { currentWeek, syncTestWeeks, syncWeek } from '../../src/lib/sync/schedule.js'
 import { autofillPoolWeek, duePoolWeeks } from '../../src/lib/scoring/autofill.js'
 import { gradePoolWeek } from '../../src/lib/scoring/rollup.js'
 import { dueForReminder, sendReminders } from '../../src/lib/email/reminders.js'
@@ -36,6 +36,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // so this is not only a scoring concern.
     const sync = await syncWeek(db, season, week.seasonType as SeasonTypeKey, week.week)
 
+    // QA weeks ride the same heartbeat. Free when none are pending.
+    const testSynced = await syncTestWeeks(db, season)
+
     const now = new Date()
 
     // Nudge first. A member who acts on the email still has until the
@@ -54,23 +57,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       filled.push(await autofillPoolWeek(db, pw.id))
     }
 
-    // Grade every active pool for this week. Cheap and idempotent — it
-    // recomputes from game results rather than incrementing, so a pool
-    // with nothing new simply lands on the same numbers.
-    const activePools = await db
-      .select({ id: nflPools.id })
-      .from(nflPools)
-      .where(eq(nflPools.status, 'active'))
+    // Grade every PUBLISHED pool-week, each pool against its OWN weeks.
+    // Cheap and idempotent — it recomputes from game results rather than
+    // incrementing, so a week with nothing new lands on the same numbers.
+    //
+    // Two deliberate non-filters. Not pools.status: nothing maintains it
+    // (every pool sits at 'open'), so filtering on 'active' graded
+    // nothing, ever. Not the global current week: a pool's weeks are its
+    // own — a QA pool on 'test' weeks never matches the league calendar,
+    // and grading it against the regular-season week id graded nothing
+    // too. Publish state is the real signal: published means members
+    // could pick, so it is gradable; unpublished has nothing to grade.
+    const publishedWeeks = await db
+      .select({ poolId: nflPoolWeeks.poolId, weekId: nflPoolWeeks.weekId })
+      .from(nflPoolWeeks)
+      .where(isNotNull(nflPoolWeeks.linesPublishedAt))
 
     const graded = []
-    for (const pool of activePools) {
-      const [pw] = await db
-        .select()
-        .from(nflPoolWeeks)
-        .where(eq(nflPoolWeeks.poolId, pool.id))
-        .limit(1)
-      if (!pw) continue
-      graded.push(await gradePoolWeek(db, pool.id, week.id))
+    for (const pw of publishedWeeks) {
+      graded.push(await gradePoolWeek(db, pw.poolId, pw.weekId))
     }
 
     const problems = graded.flatMap((g) => g.problems)
@@ -87,6 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       season,
       week: week.label,
       sync,
+      testSynced,
       remindersSent: reminded.reduce((n, r) => n + r.sent, 0),
       emailFailures,
       autofilled: filled.length,
