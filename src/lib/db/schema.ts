@@ -502,6 +502,13 @@ export const nflEntryWeeks = nflSchema.table('entry_weeks', {
   // asks for it.
   tiebreakerGuess: integer('tiebreaker_guess'),
   gradedAt: timestamp('graded_at', { withTimezone: true }),
+  // The member's explicit "I'm done" stamp, set by the submit endpoint
+  // only when the week's set is complete. Cleared by any later pick
+  // change — edited means no longer confirmed. NOT written by autofill:
+  // picks the app assigned are shown as filled, never as confirmed, and
+  // the grader's upsert must never touch it (its `set` row omits this
+  // column, which is what preserves it).
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
 }, (t) => [
   unique('nfl_entry_weeks_entry_week_key').on(t.entryId, t.weekId),
   index('nfl_entry_weeks_week_idx').on(t.weekId),

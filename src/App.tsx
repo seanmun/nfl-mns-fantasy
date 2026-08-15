@@ -6,6 +6,7 @@ import { Home as Landing } from '@/pages/Home'
 import { MyPools } from '@/pages/MyPools'
 import { CreatePool } from '@/pages/CreatePool'
 import { JoinPool } from '@/pages/JoinPool'
+import { PoolHome } from '@/pages/PoolHome'
 import { PoolPicks } from '@/pages/PoolPicks'
 import { PoolWeekAdmin } from '@/pages/PoolWeekAdmin'
 import { RulesPreview } from '@/pages/RulesPreview'
@@ -81,6 +82,7 @@ export default function App() {
 
         <Route path="/dashboard" element={<ProtectedRoute><MyPools /></ProtectedRoute>} />
         <Route path="/create" element={<ProtectedRoute><CreatePool /></ProtectedRoute>} />
+        <Route path="/pool/:id" element={<ProtectedRoute><PoolHome /></ProtectedRoute>} />
         <Route path="/pool/:id/picks" element={<ProtectedRoute><PoolPicks /></ProtectedRoute>} />
         {/* Manager tools live under /lm, matching wnba. */}
         <Route path="/lm/:id/week" element={<ProtectedRoute><PoolWeekAdmin /></ProtectedRoute>} />

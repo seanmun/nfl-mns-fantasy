@@ -62,13 +62,16 @@ export interface PicksResponse {
     picksRequired: number | null
     keyPick: boolean
     managerNote: string | null
+    startWeek: number
+    endWeek: number
   }
+  manager: boolean
   week: { id: string; week: number; label: string }
   published: string | null
   deadline: string | null
   revealed: boolean
   slate: ApiSlateGame[]
-  entries: Array<{ id: string; entryName: string }>
+  entries: Array<{ id: string; entryName: string; submittedAt: string | null }>
   myPicks: ApiPick[]
   others: ApiOtherPick[]
 }
@@ -176,6 +179,12 @@ export function createApi(getToken: GetToken) {
       request<{ ok: true; saved: number }>(getToken, `/api/pools/${poolId}/picks`, {
         method: 'PUT',
         body: JSON.stringify({ entryId, week, picks }),
+      }),
+
+    submitPicks: (poolId: string, entryId: string, week: number) =>
+      request<{ ok: true; submittedAt: string }>(getToken, `/api/pools/${poolId}/picks`, {
+        method: 'POST',
+        body: JSON.stringify({ entryId, week }),
       }),
   }
 }

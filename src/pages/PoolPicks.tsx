@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createApi, type ApiOtherPick, type ApiSlateGame, type SavePick } from '@/lib/api/client'
@@ -13,10 +13,11 @@ export function PoolPicks() {
   const api = useMemo(() => createApi(getToken), [getToken])
   const qc = useQueryClient()
 
-  // Undefined asks the server for the current week; week navigation
-  // arrives with the standings screen.
-  const [weekNo] = useState<number | undefined>(undefined)
+  // Undefined asks the server for the current week; the switcher below
+  // sets a specific one.
+  const [weekNo, setWeekNo] = useState<number | undefined>(undefined)
   const [entryId, setEntryId] = useState<string | null>(null)
+  const navigate = useNavigate()
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['picks', poolId, weekNo],
@@ -47,6 +48,14 @@ export function PoolPicks() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['picks', poolId] }),
   })
 
+  const submit = useMutation({
+    mutationFn: () => api.submitPicks(poolId, activeEntry!, data!.week.week),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['picks', poolId] })
+      navigate(`/pool/${poolId}`, { state: { justSubmitted: true } })
+    },
+  })
+
   const autoSave = useAutoSave<SavePick[]>(
     useCallback((value) => mutation.mutateAsync(value), [mutation])
   )
@@ -68,12 +77,60 @@ export function PoolPicks() {
   if (isLoading) return <Loading />
   if (error || !data) return <Problem message={(error as Error)?.message ?? 'Could not load this pool.'} />
 
+  const switchWeek = (n: number) => {
+    setDraft(null)
+    setWeekNo(n)
+  }
+
+  // Rendered on BOTH branches below — an unpublished week must still
+  // carry the switcher, or whoever pages into it is stranded there.
+  const pageHeader = (
+    <header className="px-4 pt-6 pb-4 border-b border-[var(--color-border)]">
+      <Link
+        to="/"
+        className="inline-flex items-center min-h-[var(--tap-target-min)] font-bold text-[var(--color-accent)]"
+      >
+        &larr; My pools
+      </Link>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => switchWeek(data.week.week - 1)}
+          disabled={data.week.week <= data.pool.startWeek}
+          aria-label="Previous week"
+          className="min-h-[var(--tap-target-min)] min-w-[var(--tap-target-min)] rounded-lg font-black text-[var(--color-accent)] disabled:opacity-30"
+        >
+          &lsaquo;
+        </button>
+        <p className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)]">
+          {data.week.label}
+        </p>
+        <button
+          onClick={() => switchWeek(data.week.week + 1)}
+          disabled={data.week.week >= data.pool.endWeek}
+          aria-label="Next week"
+          className="min-h-[var(--tap-target-min)] min-w-[var(--tap-target-min)] rounded-lg font-black text-[var(--color-accent)] disabled:opacity-30"
+        >
+          &rsaquo;
+        </button>
+      </div>
+      <h1 className="text-[1.7rem] font-extrabold leading-tight text-balance">{data.pool.name}</h1>
+      {data.deadline ? (
+        <p className="mt-2 text-[var(--color-muted-foreground)]">
+          Picks close <b className="text-[var(--color-foreground)]">{kickoffLabel(data.deadline)}</b>
+        </p>
+      ) : null}
+    </header>
+  )
+
   // ── Not published yet ───────────────────────────────────────────
   // A member arriving before the manager has published needs to be told
   // that plainly. An empty list would read as a broken app.
   if (!data.published) {
     return (
-      <NotOpenYet poolName={data.pool.name} weekLabel={data.week.label} note={data.pool.managerNote} />
+      <div className="pb-40">
+        {pageHeader}
+        <NotOpenYet note={data.pool.managerNote} />
+      </div>
     )
   }
 
@@ -108,23 +165,7 @@ export function PoolPicks() {
 
   return (
     <div className="pb-40">
-      <header className="px-4 pt-6 pb-4 border-b border-[var(--color-border)]">
-        <Link
-          to="/"
-          className="inline-flex items-center min-h-[var(--tap-target-min)] font-bold text-[var(--color-accent)]"
-        >
-          &larr; My pools
-        </Link>
-        <p className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)]">
-          {data.week.label}
-        </p>
-        <h1 className="text-[1.7rem] font-extrabold leading-tight text-balance">{data.pool.name}</h1>
-        {data.deadline ? (
-          <p className="mt-2 text-[var(--color-muted-foreground)]">
-            Picks close <b className="text-[var(--color-foreground)]">{kickoffLabel(data.deadline)}</b>
-          </p>
-        ) : null}
-      </header>
+      {pageHeader}
 
       {data.entries.length > 1 ? (
         <EntryPicker
@@ -197,6 +238,15 @@ export function PoolPicks() {
         state={autoSave.state}
         error={autoSave.error}
         onRetry={autoSave.retry}
+        submitted={
+          // A local draft means edits since load; the server clears the
+          // stamp on save, so treat any draft as not-submitted rather
+          // than showing a stale "Submitted" over changed picks.
+          draft == null && !!data.entries.find((e) => e.id === activeEntry)?.submittedAt
+        }
+        submitting={submit.isPending}
+        onSubmit={() => submit.mutate()}
+        submitError={submit.error ? (submit.error as Error).message : null}
       />
     </div>
   )
@@ -391,6 +441,10 @@ function StatusBar({
   state,
   error,
   onRetry,
+  submitted,
+  submitting,
+  onSubmit,
+  submitError,
 }: {
   have: number
   need: number
@@ -399,6 +453,10 @@ function StatusBar({
   state: string
   error: string | null
   onRetry: () => void
+  submitted: boolean
+  submitting: boolean
+  onSubmit: () => void
+  submitError: string | null
 }) {
   // A failed save is the one thing that can silently cost someone their
   // week now that there is no Save button, so it takes over the bar
@@ -428,14 +486,30 @@ function StatusBar({
         ? 'Now choose your key pick'
         : state === 'saving'
           ? 'Saving…'
-          : 'All saved — you can change these until the deadline'
+          : submitted
+            ? 'Submitted. Change anything and you will need to resubmit.'
+            : 'All saved — now submit to lock them in'
 
   return (
-    <div className="fixed left-0 right-0 bottom-0 bg-[var(--color-card)] border-t border-[var(--color-border-interactive)] px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-      <b className={'block text-[1.15rem] tabular-nums ' + (done ? 'text-[var(--color-accent)]' : '')}>
-        {have} of {need} picks
-      </b>
-      <span className="text-[0.85rem] text-[var(--color-muted-foreground)]">{detail}</span>
+    <div className="fixed left-0 right-0 bottom-0 bg-[var(--color-card)] border-t border-[var(--color-border-interactive)] px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex items-center gap-3">
+      <div className="flex-1">
+        <b className={'block text-[1.15rem] tabular-nums ' + (done ? 'text-[var(--color-accent)]' : '')}>
+          {have} of {need} picks
+          {submitted ? <span className="ml-2 text-[var(--color-accent)]">&#10003; Submitted</span> : null}
+        </b>
+        <span className="text-[0.85rem] text-[var(--color-muted-foreground)]">
+          {submitError ?? detail}
+        </span>
+      </div>
+      {done && !submitted ? (
+        <button
+          onClick={onSubmit}
+          disabled={submitting || state === 'saving'}
+          className="min-h-[var(--tap-target-min)] px-6 rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold disabled:opacity-50"
+        >
+          {submitting ? 'Submitting…' : 'Submit picks'}
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -510,21 +584,9 @@ function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame
   )
 }
 
-function NotOpenYet({
-  poolName,
-  weekLabel,
-  note,
-}: {
-  poolName: string
-  weekLabel: string
-  note: string | null
-}) {
+function NotOpenYet({ note }: { note: string | null }) {
   return (
-    <div className="px-4 py-12 flex flex-col gap-4">
-      <p className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)]">
-        {weekLabel}
-      </p>
-      <h1 className="text-[1.7rem] font-extrabold leading-tight">{poolName}</h1>
+    <div className="px-4 py-8 flex flex-col gap-4">
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
         <p className="text-[1.05rem] font-bold mb-2">This week isn&rsquo;t open yet</p>
         <p className="text-[var(--color-muted-foreground)] leading-relaxed">

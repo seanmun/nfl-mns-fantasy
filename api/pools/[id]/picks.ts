@@ -3,6 +3,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../_db.js'
 import { applyCors, loadCtx, othersPicksVisible } from '../../_pool.js'
 import {
+  nflEntryWeeks,
   nflGames,
   nflPicks,
   nflPoolEntries,
@@ -115,6 +116,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from(nflPicks)
     .where(and(inArray(nflPicks.entryId, myEntryIds), eq(nflPicks.weekId, week.id)))
 
+  // Submission stamps for this user's entries this week. Missing row =
+  // never submitted.
+  const myEntryWeeks = await db
+    .select({ entryId: nflEntryWeeks.entryId, submittedAt: nflEntryWeeks.submittedAt })
+    .from(nflEntryWeeks)
+    .where(and(inArray(nflEntryWeeks.entryId, myEntryIds), eq(nflEntryWeeks.weekId, week.id)))
+  const submittedByEntry = new Map(myEntryWeeks.map((r) => [r.entryId, r.submittedAt]))
+
   // Everyone else's picks are withheld until the deadline. Single
   // source of truth for that rule — see othersPicksVisible.
   const revealed = await othersPicksVisible(pool.id, week.id)
@@ -159,18 +168,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       picksRequired: pool.picksRequired ?? config.picksRequired ?? null,
       keyPick: config.keyPick === true,
       managerNote: pool.managerNote,
+      // Week navigation bounds — the pool's own span, not the calendar's.
+      startWeek: pool.startWeek,
+      endWeek: pool.endWeek,
     },
+    // Whether the CALLER runs this pool, not a fact about the pool.
+    manager: ctx.isPoolAdmin,
     week: { id: week.id, week: week.week, label: week.label },
     published,
     deadline,
     revealed,
     slate,
-    entries: ctx.entries.map((e) => ({ id: e.id, entryName: e.entryName })),
+    entries: ctx.entries.map((e) => ({
+      id: e.id,
+      entryName: e.entryName,
+      submittedAt: submittedByEntry.get(e.id) ?? null,
+    })),
     myPicks,
     others,
   }
 
   if (req.method === 'GET') return res.status(200).json(shape)
+  // ── Submit ──────────────────────────────────────────────────────
+  // The explicit "I'm done" — allowed only while picks are open and only
+  // on a complete set, so a confirmation can never be a lie. Autofill
+  // never stamps this: an app-filled week reads as filled, not confirmed.
+  if (req.method === 'POST') {
+    const { entryId } = (req.body ?? {}) as { entryId?: string }
+    if (!entryId || !myEntryIds.includes(entryId)) {
+      return res.status(403).json({ error: 'That entry is not yours.' })
+    }
+    if (!published) {
+      return res.status(400).json({ errors: ['This week is not open yet.'] })
+    }
+    if (deadline && now >= deadline) {
+      return res.status(400).json({ errors: ['Picks are closed for this week.'] })
+    }
+
+    const mine = myPicks.filter((p) => p.entryId === entryId)
+    const need =
+      pool.poolType === 'survivor'
+        ? 1
+        : pool.picksRequired ?? config.picksRequired ?? slateRows.length
+    if (mine.length < need) {
+      return res.status(400).json({
+        errors: [`You have ${mine.length} of ${need} picks in — finish before submitting.`],
+      })
+    }
+    if (config.keyPick === true && !mine.some((p) => p.isKeyPick)) {
+      return res.status(400).json({ errors: ['Choose your key pick before submitting.'] })
+    }
+
+    await db
+      .insert(nflEntryWeeks)
+      .values({ entryId, weekId: week.id, submittedAt: now })
+      .onConflictDoUpdate({
+        target: [nflEntryWeeks.entryId, nflEntryWeeks.weekId],
+        set: { submittedAt: now },
+      })
+    return res.status(200).json({ ok: true, submittedAt: now.toISOString() })
+  }
+
   if (req.method !== 'PUT') return res.status(405).json({ error: 'Method not allowed' })
 
   // ── Save ────────────────────────────────────────────────────────
@@ -271,6 +329,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .where(eq(nflPicks.id, row.pickId))
       }
     }
+
+    // Edited means no longer confirmed. Any successful save clears the
+    // submission stamp; the member resubmits when they are done again.
+    await db
+      .update(nflEntryWeeks)
+      .set({ submittedAt: null })
+      .where(and(eq(nflEntryWeeks.entryId, entryId), eq(nflEntryWeeks.weekId, week.id)))
 
     return res.status(200).json({ ok: true, saved: result.effective.length })
   } catch (error) {
