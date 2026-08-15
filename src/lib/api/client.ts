@@ -39,6 +39,20 @@ export interface ApiPick {
   pointsEarned: number
 }
 
+// One row of the post-deadline reveal: every entry's picks, the caller's
+// included. Absent (empty array) until the week's deadline passes.
+export interface ApiOtherPick {
+  entryId: string
+  entryName: string
+  gameId: string
+  selectedTeamId: string
+  confidencePoints: number | null
+  isKeyPick: boolean
+  isAuto: boolean
+  result: 'pending' | 'win' | 'loss' | 'push' | 'missed'
+  pointsEarned: number
+}
+
 export interface PicksResponse {
   pool: {
     id: string
@@ -56,7 +70,7 @@ export interface PicksResponse {
   slate: ApiSlateGame[]
   entries: Array<{ id: string; entryName: string }>
   myPicks: ApiPick[]
-  others: unknown[]
+  others: ApiOtherPick[]
 }
 
 export interface SavePick {

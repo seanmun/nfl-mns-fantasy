@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createApi, type ApiSlateGame, type SavePick } from '@/lib/api/client'
+import { createApi, type ApiOtherPick, type ApiSlateGame, type SavePick } from '@/lib/api/client'
 import { useAutoSave } from '@/hooks/useAutoSave'
 import { kickoffLabel, dayLabel, teamSpread } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
@@ -21,6 +21,9 @@ export function PoolPicks() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['picks', poolId, weekNo],
     queryFn: () => api.getPicks(poolId, weekNo),
+    // Scores move on game day. A minute of staleness is fine; a screen
+    // someone leaves open through the 1 o'clock games should not be.
+    refetchInterval: 60_000,
   })
 
   // Local pick state, keyed by gameId. Seeded from the server and then
@@ -182,6 +185,10 @@ export function PoolPicks() {
         )
       })}
 
+      {data.revealed && data.others.length ? (
+        <Reveal others={data.others} slate={data.slate} />
+      ) : null}
+
       <StatusBar
         have={have}
         need={need}
@@ -257,7 +264,27 @@ function GameCard({
       }
     >
       <div className="flex items-center justify-between gap-2 px-3 py-2 text-[0.85rem] text-[var(--color-muted-foreground)] border-b border-[var(--color-border)]">
-        <span>{game.kickoffTbd ? 'Time to be announced' : kickoffLabel(game.kickoffAt)}</span>
+        {game.status === 'in_progress' || game.status === 'final' ? (
+          // Kickoff time gives way to the score once there is one.
+          <span className="font-mono font-bold tabular-nums text-[var(--color-foreground)]">
+            {game.away?.nickname} {game.awayScore ?? 0} &ndash; {game.homeScore ?? 0}{' '}
+            {game.home?.nickname}
+            <span
+              className={
+                'ml-2 uppercase tracking-wider text-[0.72rem] ' +
+                (game.status === 'final'
+                  ? 'text-[var(--color-muted-foreground)]'
+                  : 'text-[var(--color-accent)]')
+              }
+            >
+              {game.status === 'final' ? 'Final' : 'Live'}
+            </span>
+          </span>
+        ) : game.status === 'postponed' || game.status === 'cancelled' ? (
+          <span className="font-bold uppercase tracking-wider text-[0.72rem]">{game.status}</span>
+        ) : (
+          <span>{game.kickoffTbd ? 'Time to be announced' : kickoffLabel(game.kickoffAt)}</span>
+        )}
         {!game.open ? (
           // Never colour alone — a padlock and the word, per WCAG 1.4.1.
           <span className="font-bold uppercase tracking-wider text-[0.72rem] text-[var(--color-locked)]">
@@ -410,6 +437,76 @@ function StatusBar({
       </b>
       <span className="text-[0.85rem] text-[var(--color-muted-foreground)]">{detail}</span>
     </div>
+  )
+}
+
+// The post-deadline reveal — everyone's picks, one row per entry. Only
+// rendered when the server says so; before the deadline `others` is
+// empty by design and this section simply is not there.
+function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame[] }) {
+  const nickById = new Map<string, string>()
+  for (const g of slate) {
+    if (g.home) nickById.set(g.home.id, g.home.nickname)
+    if (g.away) nickById.set(g.away.id, g.away.nickname)
+  }
+
+  const byEntry = new Map<string, { name: string; picks: ApiOtherPick[] }>()
+  for (const p of others) {
+    const e = byEntry.get(p.entryId) ?? { name: p.entryName, picks: [] }
+    e.picks.push(p)
+    byEntry.set(p.entryId, e)
+  }
+  const entries = [...byEntry.values()].sort((a, b) => a.name.localeCompare(b.name))
+
+  const badge = (r: ApiOtherPick['result']) =>
+    r === 'win' ? ['W', 'var(--color-pick-win)'] :
+    r === 'loss' ? ['L', 'var(--color-pick-loss)'] :
+    r === 'push' ? ['P', 'var(--color-pick-push)'] : null
+
+  return (
+    <section className="mt-8 border-t-2 border-[var(--color-border-interactive)]">
+      <div className="px-4 pt-5 pb-1">
+        <h2 className="text-[1.05rem] font-bold">Everyone&rsquo;s picks</h2>
+        <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
+          Revealed now that picks are closed.
+        </p>
+      </div>
+      <ul className="px-4 py-3 flex flex-col gap-3">
+        {entries.map((e) => (
+          <li
+            key={e.name}
+            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3"
+          >
+            <b className="block mb-2">{e.name}</b>
+            <div className="flex flex-wrap gap-2">
+              {e.picks.map((p) => {
+                const b = badge(p.result)
+                return (
+                  <span
+                    key={p.gameId}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border-interactive)] px-2.5 py-1.5 font-bold text-[0.95rem]"
+                  >
+                    {p.isKeyPick ? (
+                      <span aria-label="key pick" className="text-[var(--color-key)]">★</span>
+                    ) : null}
+                    {nickById.get(p.selectedTeamId) ?? p.selectedTeamId}
+                    {b ? (
+                      // Letter plus colour, never colour alone.
+                      <b style={{ color: b[1] }}>{b[0]}</b>
+                    ) : null}
+                    {p.isAuto ? (
+                      <span className="text-[0.72rem] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                        auto
+                      </span>
+                    ) : null}
+                  </span>
+                )
+              })}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
