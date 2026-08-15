@@ -15,7 +15,7 @@ function client(): Resend {
 }
 
 function from(): string {
-  return process.env.RESEND_FROM || 'MNS Fantasy <noreply@mnsfantasy.com>'
+  return process.env.RESEND_FROM_EMAIL || 'MNS Fantasy <noreply@mnsfantasy.com>'
 }
 
 export interface Message {
