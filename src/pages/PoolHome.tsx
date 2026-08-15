@@ -116,6 +116,13 @@ export function PoolHome() {
         )
       })}
 
+      <Link
+        to={`/pool/${poolId}/standings`}
+        className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+      >
+        Standings
+      </Link>
+
       {data.manager ? (
         <Link
           to={`/lm/${poolId}/week`}

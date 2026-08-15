@@ -146,6 +146,31 @@ export interface PoolSummary {
   createdBy: string
 }
 
+export interface StandingsWeekCell {
+  week: number
+  points: number | null
+  correct: number
+  incorrect: number
+  push: number
+}
+
+export interface StandingsRow {
+  rank: number
+  entryId: string
+  entryName: string
+  isMine: boolean
+  totalPoints: number
+  keyPickScore: number
+  strikes: number
+  isEliminated: boolean
+  weekly: StandingsWeekCell[]
+}
+
+export interface StandingsResponse {
+  weeks: Array<{ week: number; label: string }>
+  rows: StandingsRow[]
+}
+
 export function createApi(getToken: GetToken) {
   return {
     myPools: () =>
@@ -180,6 +205,9 @@ export function createApi(getToken: GetToken) {
         method: 'PUT',
         body: JSON.stringify({ entryId, week, picks }),
       }),
+
+    getStandings: (poolId: string) =>
+      request<StandingsResponse>(getToken, `/api/pools/${poolId}/standings`),
 
     submitPicks: (poolId: string, entryId: string, week: number) =>
       request<{ ok: true; submittedAt: string }>(getToken, `/api/pools/${poolId}/picks`, {
