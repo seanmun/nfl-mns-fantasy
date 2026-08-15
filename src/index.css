@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+/* Base tokens are the platform's — identical to the hub's index.css.
+   Every app defines the same set so the shared header, footer and cards
+   render the same everywhere. Do not drift these; add app-specific
+   tokens below instead.
+
+   Deliberately NOT copying golf's alias block (--color-surface,
+   --color-text-primary, ...). Those exist only because golf's components
+   were written before the tokens landed, and carrying two names for one
+   colour into a new app is how the drift starts. Components here use the
+   platform names directly. */
+@theme {
+  --color-background: #0a0a0f;
+  --color-foreground: #f5f5f7;
+  --color-card: #141419;
+  --color-card-foreground: #f5f5f7;
+  --color-border: #2a2a35;
+  --color-muted: #1c1c24;
+  --color-muted-foreground: #8e8e9a;
+  --color-accent: #00ff87;
+  --color-accent-foreground: #0a0a0f;
+
+  --color-neon-green: #00ff87;
+  --color-neon-purple: #bf5af2;
+  --color-neon-cyan: #00e5ff;
+  --color-neon-pink: #ff2d55;
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* NFL-specific: pick and game states.
+
+   Every value below was measured against its real backdrop rather than
+   eyeballed. Contrast ratios on --color-card (#141419):
+     pick-win     14.7   pick-loss   5.4   pick-pending  11.9
+     pick-push     5.7   locked      5.7
+   All clear WCAG AA for normal text (4.5). The audience for this app is
+   older and non-technical, so "probably readable" is not the bar.
+
+   --color-locked is deliberately the same grey as --color-pick-push and
+   as muted-foreground. The obvious choice for a locked row was a much
+   dimmer grey, which measured 2.11 and failed outright. Locked state is
+   carried by an icon and the word "Locked", not by colour — WCAG 1.4.1
+   forbids colour as the only signal anyway, so the dim grey was buying
+   nothing and costing legibility. */
+:root {
+  --color-pick-win: #00ff87;
+  --color-pick-loss: #ff453a;
+  --color-pick-push: #8e8e9a;
+  --color-pick-pending: #00e5ff;
+  --color-game-live: #ff2d55;
+  --color-locked: #8e8e9a;
+
+  /* Key pick. Amber rather than a second green so the two states can
+     never be confused, and 10.0:1 on --color-card — measured, not
+     eyeballed. State is also carried by a star and the word KEY, since
+     colour alone fails WCAG 1.4.1. */
+  --color-key: #ffb000;
+
+  /* The platform --color-border (#2a2a35) measures 1.39 against the page
+     background. That is fine for a decorative hairline and fails WCAG
+     1.4.11, which wants 3:1 for the boundary of anything you interact
+     with. Rather than change the shared token and drift from the rest of
+     the platform, interactive edges — pick buttons, cards you tap — use
+     this one instead: 3.79 on background, 3.52 on card. */
+  --color-border-interactive: #6b6b7d;
+
+  /* Minimum comfortable target. WCAG 2.5.5 asks 44px; this audience is
+     picking five games on a phone, often one-handed. */
+  --tap-target-min: 3rem;
+}
+
+/* Base size bumped from the 16px default. Everything downstream is in
+   rem, so this scales the whole app in one place — and it still respects
+   a reader who has set a larger size in their browser. */
+html {
+  font-size: 18px;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  /* Slightly looser than default: long slates of team names are easier
+     to track down the page. */
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+/* Anything tappable clears the minimum on both axes, whatever its
+   content. Applied at the base layer so no component has to remember. */
+button,
+[role='button'],
+a.tap,
+label.tap,
+input[type='checkbox'],
+input[type='radio'] {
+  min-height: var(--tap-target-min);
+}
+
+button,
+[role='button'] {
+  min-width: var(--tap-target-min);
+}
+
+/* Focus must be visible for keyboard and switch-control users, and the
+   default ring is nearly invisible on this background. */
+:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Respect a reader who has asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

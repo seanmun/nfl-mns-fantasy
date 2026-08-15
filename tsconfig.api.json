@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.api.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  /* The serverless functions. Nothing else in the workspace compiles
+     these — before the platform added a config like this, type errors in
+     api/ reached production untouched. `npm run build` reaches it through
+     the project reference in tsconfig.json. If the API ever stops being
+     checked, that reference has been removed; put it back, and verify by
+     dropping a deliberate type error into api/. */
+  "include": ["api", "src/lib/db", "src/lib/scoring"],
+  /* Tests live beside the code they cover, but they are not shipped and
+     they import vitest, which is not a runtime dependency of the
+     functions. Typechecking them is tsconfig.app.json's job. */
+  "exclude": ["**/*.test.ts"]
+}

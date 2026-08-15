@@ -1,0 +1,28 @@
+{
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "api/_*.ts,src/lib/db/*.ts,src/lib/scoring/*.ts,src/lib/sync/*.ts,src/lib/email/*.ts",
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/sync-lines",
+      "schedule": "0 10 * * 2"
+    },
+    {
+      "path": "/api/cron/tick",
+      "schedule": "0 * * * *"
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api|@|.*\\.).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
