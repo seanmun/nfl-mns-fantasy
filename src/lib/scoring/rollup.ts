@@ -122,8 +122,8 @@ export async function rebuildPoolStandings(db: Db, poolId: string): Promise<void
   const weeks = await db
     .select()
     .from(nflWeeks)
-    .where(eq(nflWeeks.season, pool.season))
-    .orderBy(nflWeeks.seasonType, nflWeeks.week)
+    .where(and(eq(nflWeeks.season, pool.season), eq(nflWeeks.seasonType, pool.seasonType)))
+    .orderBy(nflWeeks.week)
 
   // Week order matters: cumulative columns are a running total, so they
   // have to be walked in play order rather than whatever the join returns.

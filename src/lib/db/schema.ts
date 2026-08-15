@@ -203,6 +203,10 @@ export const nflPools = nflSchema.table('pools', {
   description: text('description'),
   createdBy: text('created_by').notNull().references(() => users.id),
   season: integer('season').notNull(),
+  // Which weeks this pool plays. Without it, standings sweep every week
+  // in the season and a QA pool would count real Week 1 alongside its own
+  // test days — the two would silently add together.
+  seasonType: text('season_type').$type<SeasonType>().notNull().default('regular'),
   poolType: text('pool_type').$type<PoolType>().notNull(),
   // Survivor is straight-up by definition; the create endpoint forces it.
   spreadMode: text('spread_mode').$type<SpreadMode>().notNull().default('straight_up'),
@@ -552,7 +556,11 @@ export const nflPoolAnnouncements = nflSchema.table('pool_announcements', {
 
 // ─── ENUMS ────────────────────────────────────────────────────────────────────
 
-export type SeasonType = 'pre' | 'regular' | 'post'
+// 'test' is a real season type, not a hack. Test weeks live here so the
+// ESPN calendar sync — which only ever writes pre/regular/post — can
+// never collide with them, and tearing the whole test down is one delete
+// of every week where season_type = 'test'.
+export type SeasonType = 'pre' | 'regular' | 'post' | 'test'
 export type GameStatus = 'scheduled' | 'in_progress' | 'final' | 'postponed' | 'cancelled'
 // Where a pool's official spread came from: 'api' is the untouched
 // prefill out of game_lines, 'manual' is the admin's own number.

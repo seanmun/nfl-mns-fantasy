@@ -181,12 +181,12 @@ export async function refreshWeekBounds(db: Db, weekId: string): Promise<void> {
 // still ahead of us, else the most recent. Deliberately not "today's
 // date" arithmetic — bye weeks, flexed games and the postseason make
 // calendar maths wrong often enough to matter.
-export async function currentWeek(db: Db, season: number) {
+export async function currentWeek(db: Db, season: number, seasonType: SeasonType = 'regular') {
   const weeks = await db
     .select()
     .from(nflWeeks)
-    .where(eq(nflWeeks.season, season))
-    .orderBy(nflWeeks.seasonType, nflWeeks.week)
+    .where(and(eq(nflWeeks.season, season), eq(nflWeeks.seasonType, seasonType)))
+    .orderBy(nflWeeks.week)
 
   const now = Date.now()
   return (

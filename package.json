@@ -12,7 +12,8 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "seed:teams": "tsx scripts/seed-teams.ts",
-    "seed:schedule": "tsx scripts/seed-schedule.ts"
+    "seed:schedule": "tsx scripts/seed-schedule.ts",
+    "seed:test": "tsx scripts/seed-test-weeks.ts"
   },
   "dependencies": {
     "@clerk/backend": "^3.2.3",

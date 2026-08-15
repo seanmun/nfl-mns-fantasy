@@ -36,12 +36,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .where(
           and(
             eq(nflWeeks.season, pool.season),
-            eq(nflWeeks.seasonType, 'regular'),
+            eq(nflWeeks.seasonType, pool.seasonType),
             eq(nflWeeks.week, requested)
           )
         )
         .limit(1)
-    : [await currentWeek(db, pool.season)]
+    : [await currentWeek(db, pool.season, pool.seasonType)]
 
   if (!week) return res.status(404).json({ error: 'That week is not in this season.' })
 

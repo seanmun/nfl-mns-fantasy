@@ -41,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .where(
           and(
             eq(nflWeeks.season, pool.season),
-            eq(nflWeeks.seasonType, 'regular'),
+            eq(nflWeeks.seasonType, pool.seasonType),
             eq(nflWeeks.week, requested)
           )
         )
@@ -49,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // No week asked for means "the one we're in". Defaulting to the
     // first week of the season would drop a member into Week 1 every
     // time they opened the app in November.
-    : [await currentWeek(db, pool.season)]
+    : [await currentWeek(db, pool.season, pool.seasonType)]
 
   if (!week) return res.status(404).json({ error: 'That week is not in this season.' })
 
