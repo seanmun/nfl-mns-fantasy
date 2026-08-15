@@ -402,6 +402,16 @@ good place to be clever.
 Both note and rules are **markdown, rendered** — not stored HTML. There
 is nothing to sanitise and no XSS surface.
 
+## vercel.json includeFiles is a glob on purpose
+
+`src/lib/**/*.ts`, not a list of directories. The functions import from
+`src/lib/db`, `scoring`, `sync`, `picks` and `email`, and an enumerated
+list silently omits whichever one was added last — the function then
+builds and deploys fine and dies at import time with
+`FUNCTION_INVOCATION_FAILED`, which looks like a runtime bug rather than
+a packaging one. That is exactly how `src/lib/picks` was missing on
+2026-08-15: every pool endpoint returned 500 while typechecking clean.
+
 ## Build
 
 `npm run build` runs `tsc -b`, which reaches `api/` through the
