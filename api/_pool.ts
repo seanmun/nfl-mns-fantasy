@@ -42,9 +42,11 @@ export async function loadCtx(
     userId,
     pool,
     entries,
-    // The pool's creator runs it. Site admins can act on any pool, which
-    // is a support tool, not the normal path.
-    isPoolAdmin: pool.createdBy === userId || isAdmin(userId),
+    // The pool's creator runs it, and can grant co-admins (any of the
+    // caller's entries carrying isAdmin). Site admins can act on any
+    // pool, which is a support tool, not the normal path.
+    isPoolAdmin:
+      pool.createdBy === userId || entries.some((e) => e.isAdmin) || isAdmin(userId),
   }
 }
 

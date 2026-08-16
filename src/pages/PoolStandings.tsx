@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { createApi } from '@/lib/api/client'
 
 // The leaderboard. Total points ranks it, key-pick score breaks ties —
@@ -12,10 +13,21 @@ export function PoolStandings() {
   const { getToken } = useAuth()
   const api = useMemo(() => createApi(getToken), [getToken])
 
+  const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['standings', poolId],
     queryFn: () => api.getStandings(poolId),
     refetchInterval: 60_000,
+  })
+
+  const setAdmin = useMutation({
+    mutationFn: ({ entryId, isAdmin }: { entryId: string; isAdmin: boolean }) =>
+      api.setPoolAdmin(poolId, entryId, isAdmin),
+    onSuccess: (_r, v) => {
+      toast.success(v.isAdmin ? 'Made admin' : 'Admin removed')
+      qc.invalidateQueries({ queryKey: ['standings', poolId] })
+    },
+    onError: (e: Error) => toast.error(e.message),
   })
 
   if (isLoading) {
@@ -81,11 +93,27 @@ export function PoolStandings() {
                   <td className="py-3 pr-2 font-bold">{r.rank}</td>
                   <td className="py-3 pr-3">
                     <b>{r.entryName}</b>
+                    {r.ownerIsAdmin ? (
+                      <span className="ml-2 text-[0.7rem] font-bold uppercase tracking-wider text-[var(--color-key)]">
+                        {r.ownerIsCreator ? 'manager' : 'admin'}
+                      </span>
+                    ) : null}
                     <span className="block text-[0.8rem] text-[var(--color-muted-foreground)]">
-                      {/* Username is public; email manager-only. */}
+                      {/* Username is public; email admin-only. */}
                       {r.ownerName ?? ''}
                       {r.ownerEmail ? ` · ${r.ownerEmail}` : ''}
                     </span>
+                    {r.canToggleAdmin ? (
+                      <button
+                        onClick={() =>
+                          setAdmin.mutate({ entryId: r.entryId, isAdmin: !r.ownerIsAdmin })
+                        }
+                        disabled={setAdmin.isPending}
+                        className="mt-1 min-h-[2rem] px-2 rounded border-2 border-[var(--color-border-interactive)] text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
+                      >
+                        {r.ownerIsAdmin ? 'Remove admin' : 'Make admin'}
+                      </button>
+                    ) : null}
                     {r.isMine ? (
                       <span className="ml-2 text-[0.74rem] font-bold uppercase tracking-wider text-[var(--color-accent)]">
                         you

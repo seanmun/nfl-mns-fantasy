@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../../_db.js'
-import { applyCors, loadCtx } from '../../_pool.js'
+import { applyCors, loadCtx, requirePoolAdmin } from '../../_pool.js'
 import {
   nflEntryWeeks,
   nflPoolEntries,
@@ -20,7 +20,6 @@ import { rankStandings } from '../../../src/lib/scoring/standings.js'
 // which is the same rule the reveal follows.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (applyCors(req, res)) return
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
   const poolId = String(req.query.id ?? '')
   const ctx = await loadCtx(req, res, poolId)
@@ -28,6 +27,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (ctx.entries.length === 0 && !ctx.isPoolAdmin) {
     return res.status(403).json({ error: 'You are not in this pool.' })
   }
+
+  // ── Grant / revoke co-admin ─────────────────────────────────────
+  // POST { entryId, isAdmin } — pool admins only. Writes every entry of
+  // the target USER so admin-ness never depends on which entry you
+  // look at. The creator is not demotable.
+  if (req.method === 'POST') {
+    if (!requirePoolAdmin(ctx, res)) return
+    const { entryId, isAdmin: wantAdmin } = (req.body ?? {}) as {
+      entryId?: string
+      isAdmin?: boolean
+    }
+    if (!entryId || typeof wantAdmin !== 'boolean') {
+      return res.status(400).json({ error: 'Say which entry, and admin on or off.' })
+    }
+    const [target] = await db
+      .select({ userId: nflPoolEntries.userId })
+      .from(nflPoolEntries)
+      .where(and(eq(nflPoolEntries.id, entryId), eq(nflPoolEntries.poolId, poolId)))
+      .limit(1)
+    if (!target) return res.status(404).json({ error: 'That entry is not in this pool.' })
+    if (target.userId === ctx.pool.createdBy) {
+      return res.status(400).json({ error: 'The pool creator is always an admin.' })
+    }
+    await db
+      .update(nflPoolEntries)
+      .set({ isAdmin: wantAdmin })
+      .where(and(eq(nflPoolEntries.poolId, poolId), eq(nflPoolEntries.userId, target.userId)))
+    return res.status(200).json({ ok: true })
+  }
+
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
   const entries = await db
     .select()
@@ -44,14 +74,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .where(inArray(users.id, [...new Set(entries.map((e) => e.userId))]))
     : []
   const nameByUser = new Map(owners.map((o) => [o.id, o.displayName]))
+  // Pool admins see every owner's email on the standings — it is their
+  // contact sheet for running the pool. Members never do.
   const emailByUser = new Map<string, string>()
   if (ctx.isPoolAdmin) {
-    for (const o of owners) {
-      // The full email backs up a missing username only. displayName
-      // equal to the email's local part IS the no-username fallback, so
-      // that's the tell; once a real username exists the email drops off.
-      if (o.displayName === o.email.split('@')[0]) emailByUser.set(o.id, o.email)
-    }
+    for (const o of owners) emailByUser.set(o.id, o.email)
   }
 
   // Only weeks this pool actually runs, in order, with their labels —
@@ -102,6 +129,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ownerName: nameByUser.get(entry.userId) ?? null,
         ownerEmail: emailByUser.get(entry.userId) ?? null,
         isMine: ctx.entries.some((e) => e.id === r.entryId),
+        // Who runs the pool, so the page can badge admins and offer the
+        // grant/revoke to the right rows.
+        ownerIsCreator: entry.userId === ctx.pool.createdBy,
+        ownerIsAdmin: entry.userId === ctx.pool.createdBy || entry.isAdmin,
+        canToggleAdmin: ctx.isPoolAdmin && entry.userId !== ctx.pool.createdBy,
         totalPoints: r.totalPoints,
         keyPickScore: r.keyPickScore,
         strikes: entry.strikes,

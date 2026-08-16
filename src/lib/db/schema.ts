@@ -362,6 +362,11 @@ export const nflPoolEntries = nflSchema.table('pool_entries', {
   poolId: uuid('pool_id').notNull().references(() => nflPools.id, { onDelete: 'cascade' }),
   userId: text('user_id').notNull().references(() => users.id),
   entryName: text('entry_name').notNull(),
+  // Co-admin grant. Admin-ness is per USER: a user is a pool admin when
+  // ANY of their entries carries this flag (grant/revoke writes all of
+  // them, keeping the rows consistent). The creator needs no flag and
+  // can never be demoted.
+  isAdmin: boolean('is_admin').notNull().default(false),
   // Per-entry opt-out for the pre-deadline nudge. Deliberately local to
   // this app rather than routed through the hub's marketing preferences:
   // a "you have 0 of 5 picks in" message is transactional — an obligation

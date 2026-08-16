@@ -173,6 +173,10 @@ export interface StandingsRow {
   keyPickScore: number
   strikes: number
   isEliminated: boolean
+  ownerIsCreator: boolean
+  ownerIsAdmin: boolean
+  // True when the CALLER may grant/revoke admin on this row.
+  canToggleAdmin: boolean
   weekly: StandingsWeekCell[]
 }
 
@@ -234,6 +238,12 @@ export function createApi(getToken: GetToken) {
 
     getStandings: (poolId: string) =>
       request<StandingsResponse>(getToken, `/api/pools/${poolId}/standings`),
+
+    setPoolAdmin: (poolId: string, entryId: string, isAdmin: boolean) =>
+      request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {
+        method: 'POST',
+        body: JSON.stringify({ entryId, isAdmin }),
+      }),
 
     submitPicks: (poolId: string, entryId: string, week: number) =>
       request<{ ok: true; submittedAt: string }>(getToken, `/api/pools/${poolId}/picks`, {
