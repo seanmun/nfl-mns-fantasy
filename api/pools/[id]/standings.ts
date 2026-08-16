@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../../_db.js'
-import { applyCors, loadCtx, requirePoolAdmin } from '../../_pool.js'
+import { applyCors, loadCtx } from '../../_pool.js'
+import { isAdmin as isSiteAdmin } from '../../_middleware.js'
 import {
   nflEntryWeeks,
   nflGames,
@@ -30,12 +31,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ error: 'You are not in this pool.' })
   }
 
+  // Only the CREATOR hands out admin (site admin as support override).
+  // A co-admin helps run the pool; letting them mint more admins is how
+  // admin quietly stops meaning anything.
+  const canManageAdmins = ctx.pool.createdBy === ctx.userId || isSiteAdmin(ctx.userId)
+
   // ── Grant / revoke co-admin ─────────────────────────────────────
-  // POST { entryId, isAdmin } — pool admins only. Writes every entry of
+  // POST { entryId, isAdmin } — creator only. Writes every entry of
   // the target USER so admin-ness never depends on which entry you
   // look at. The creator is not demotable.
   if (req.method === 'POST') {
-    if (!requirePoolAdmin(ctx, res)) return
+    if (!canManageAdmins) {
+      return res.status(403).json({ error: 'Only the pool creator can manage admins.' })
+    }
     const { entryId, isAdmin: wantAdmin } = (req.body ?? {}) as {
       entryId?: string
       isAdmin?: boolean
@@ -168,7 +176,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // grant/revoke to the right rows.
         ownerIsCreator: entry.userId === ctx.pool.createdBy,
         ownerIsAdmin: entry.userId === ctx.pool.createdBy || entry.isAdmin,
-        canToggleAdmin: ctx.isPoolAdmin && entry.userId !== ctx.pool.createdBy,
+        // Creator-only, never on the creator's rows, never on your own.
+        canToggleAdmin:
+          canManageAdmins &&
+          entry.userId !== ctx.pool.createdBy &&
+          entry.userId !== ctx.userId,
         totalPoints: r.totalPoints,
         keyPickScore: r.keyPickScore,
         strikes: entry.strikes,
