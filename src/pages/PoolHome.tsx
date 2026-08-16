@@ -175,7 +175,7 @@ export function PoolHome() {
           className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 flex flex-col gap-0.5"
         >
           <span className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-muted-foreground)]">
-            Rank
+            Standings
           </span>
           <b className="text-[1.5rem] leading-none tabular-nums">
             {myBest ? `#${myBest.rank}` : '—'}
@@ -183,8 +183,8 @@ export function PoolHome() {
           <span className="text-[0.78rem] text-[var(--color-muted-foreground)]">
             {myBest && leader
               ? myBest.rank === 1
-                ? 'leading'
-                : `${leader.totalPoints - myBest.totalPoints} behind`
+                ? 'my rank · leading'
+                : `my rank · ${leader.totalPoints - myBest.totalPoints} behind`
               : ''}
           </span>
         </Link>
