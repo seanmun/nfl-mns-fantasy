@@ -121,7 +121,6 @@ export function PoolHome() {
           anyLive={anyLive}
           allFinal={allFinal}
           poolId={poolId}
-          showName={data.entries.length > 1}
           renaming={renaming?.id === e.id ? renaming : null}
           onRenameStart={() => setRenaming({ id: e.id, value: e.entryName })}
           onRenameChange={(v) => setRenaming({ id: e.id, value: v })}
@@ -302,7 +301,6 @@ function EntryHero({
   anyLive,
   allFinal,
   poolId,
-  showName,
   renaming,
   onRenameStart,
   onRenameChange,
@@ -317,7 +315,6 @@ function EntryHero({
   anyLive: boolean
   allFinal: boolean
   poolId: string
-  showName: boolean
   renaming: { id: string; value: string } | null
   onRenameStart: () => void
   onRenameChange: (v: string) => void
@@ -366,7 +363,7 @@ function EntryHero({
             Rename
           </button>
         </div>
-      ) : null}
+      )}
 
       {!deadlinePassed ? (
         // ── Picks open ──
