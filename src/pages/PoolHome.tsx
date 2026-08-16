@@ -236,27 +236,7 @@ export function PoolHome() {
       </div>
 
       {/* ── Admin ── */}
-      {data.manager ? (
-        <div className="rounded-xl border border-[var(--color-key)] bg-[var(--color-card)] p-4 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-key)]">
-              Admin
-            </p>
-            <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
-              {data.published ? 'Published' : 'NOT published'}
-              {!deadlinePassed && data.pulse.entriesComplete < data.pulse.entriesTotal
-                ? ` · ${data.pulse.entriesTotal - data.pulse.entriesComplete} short on picks`
-                : ''}
-            </p>
-          </div>
-          <Link
-            to={`/lm/${poolId}/week`}
-            className="shrink-0 min-h-[var(--tap-target-min)] px-4 flex items-center rounded-lg border-2 border-[var(--color-key)] font-bold text-[var(--color-key)]"
-          >
-            Manage
-          </Link>
-        </div>
-      ) : null}
+      {data.manager ? <AdminCard poolId={poolId} deadlinePassed={deadlinePassed} /> : null}
 
       {data.pool.managerNote ? (
         <div className="rounded-xl border border-[var(--color-border)] border-l-4 border-l-[var(--color-accent)] bg-[var(--color-card)] p-4">
@@ -312,6 +292,158 @@ export function PoolHome() {
           </div>
         )
       ) : null}
+    </div>
+  )
+}
+
+// ── The admin card ──────────────────────────────────────────────────
+// Summary-first: a pool can hold 180 entries, so this is counts with
+// the detail folded behind a tap, never a wall of rows.
+
+function AdminCard({ poolId, deadlinePassed }: { poolId: string; deadlinePassed: boolean }) {
+  const { getToken } = useAuth()
+  const api = useMemo(() => createApi(getToken), [getToken])
+  const [showShort, setShowShort] = useState(false)
+  const [confirmRemind, setConfirmRemind] = useState(false)
+
+  const { data: pulse } = useQuery({
+    queryKey: ['admin-pulse', poolId],
+    queryFn: () => api.getAdminPulse(poolId),
+    refetchInterval: 60_000,
+  })
+
+  const remind = useMutation({
+    mutationFn: () => api.remindNow(poolId),
+    onSuccess: (r) => {
+      setConfirmRemind(false)
+      toast.success(`Reminder sent to ${r.sent} ${r.sent === 1 ? 'person' : 'people'}`)
+    },
+    onError: (e: Error) => {
+      setConfirmRemind(false)
+      toast.error(e.message)
+    },
+  })
+
+  if (!pulse) return null
+
+  const problems: string[] = []
+  if (!pulse.published) problems.push('not published')
+  if (pulse.readiness.spreadsMissing > 0)
+    problems.push(`${pulse.readiness.spreadsMissing} spreads missing`)
+  if (pulse.gradingPending > 0) problems.push(`${pulse.gradingPending} picks ungraded`)
+
+  return (
+    <div className="rounded-xl border border-[var(--color-key)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-key)]">
+            Admin · {pulse.week.label}
+          </p>
+          <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
+            {pulse.published
+              ? `Published · ${pulse.readiness.gamesIncluded} games in play`
+              : `${pulse.readiness.gamesIncluded} games ticked — not published`}
+            {problems.length ? (
+              <b className="text-[var(--color-pick-loss)]"> · {problems.join(' · ')}</b>
+            ) : pulse.published ? (
+              <span className="text-[var(--color-pick-win)]"> · all good</span>
+            ) : null}
+          </p>
+        </div>
+        <Link
+          to={`/lm/${poolId}/week`}
+          className="shrink-0 min-h-[var(--tap-target-min)] px-4 flex items-center rounded-lg border-2 border-[var(--color-key)] font-bold text-[var(--color-key)]"
+        >
+          Manage
+        </Link>
+      </div>
+
+      {/* Who's short — count first, names behind a tap. */}
+      {!deadlinePassed && pulse.short.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => setShowShort((s) => !s)}
+            aria-expanded={showShort}
+            className="min-h-[var(--tap-target-min)] text-left font-bold text-[var(--color-muted-foreground)]"
+          >
+            {pulse.short.length} of {pulse.entriesTotal} entries still short on picks{' '}
+            {showShort ? '▴' : '▾'}
+          </button>
+          {showShort ? (
+            <ul className="max-h-56 overflow-y-auto flex flex-col gap-1 text-[0.9rem]">
+              {pulse.short.map((s) => (
+                <li
+                  key={s.entryName}
+                  className="flex items-baseline justify-between gap-2 rounded bg-[var(--color-muted)] px-2.5 py-1.5"
+                >
+                  <span className="truncate">
+                    <b>{s.entryName}</b>
+                    <span className="text-[var(--color-muted-foreground)]">
+                      {' '}
+                      · {s.picksIn} in
+                    </span>
+                  </span>
+                  {s.ownerEmail ? (
+                    <span className="shrink-0 text-[0.8rem] text-[var(--color-muted-foreground)]">
+                      {s.ownerEmail}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {confirmRemind ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[0.9rem] text-[var(--color-muted-foreground)]">
+                Email {pulse.short.length} {pulse.short.length === 1 ? 'person' : 'people'}?
+              </span>
+              <button
+                onClick={() => remind.mutate()}
+                disabled={remind.isPending}
+                className="min-h-[var(--tap-target-min)] px-4 rounded-lg bg-[var(--color-key)] text-[var(--color-background)] font-bold disabled:opacity-50"
+              >
+                {remind.isPending ? 'Sending…' : 'Yes, send'}
+              </button>
+              <button
+                onClick={() => setConfirmRemind(false)}
+                className="min-h-[var(--tap-target-min)] px-3 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmRemind(true)}
+              className="min-h-[var(--tap-target-min)] rounded-lg border-2 border-[var(--color-border-interactive)] font-bold text-[var(--color-muted-foreground)]"
+            >
+              Send reminder email now
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          to={`/lm/${poolId}/message`}
+          className="min-h-[var(--tap-target-min)] px-4 flex items-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+        >
+          Message members
+        </Link>
+        {pulse.joinCode ? (
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(
+                `${window.location.origin}/join?code=${pulse.joinCode}`
+              )
+              toast.success('Invite link copied')
+            }}
+            className="min-h-[var(--tap-target-min)] px-4 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+          >
+            Copy invite link ·{' '}
+            <span className="font-mono tracking-[0.1em]">{pulse.joinCode}</span>
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }

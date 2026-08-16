@@ -202,6 +202,29 @@ export interface StandingsResponse {
   rows: StandingsRow[]
 }
 
+export interface AdminPulse {
+  week: { label: string }
+  published: string | null
+  deadline: string | null
+  readiness: { gamesIncluded: number; spreadsMissing: number }
+  memberCount: number
+  entriesTotal: number
+  short: Array<{
+    entryName: string
+    picksIn: number
+    ownerName: string | null
+    ownerEmail: string | null
+  }>
+  gradingPending: number
+  joinCode: string | null
+  recentAnnouncements: Array<{
+    subject: string
+    sentAt: string
+    recipientCount: number
+    failedCount: number
+  }>
+}
+
 export function createApi(getToken: GetToken) {
   return {
     myPools: () =>
@@ -255,6 +278,25 @@ export function createApi(getToken: GetToken) {
 
     getStandings: (poolId: string) =>
       request<StandingsResponse>(getToken, `/api/pools/${poolId}/standings`),
+
+    getAdminPulse: (poolId: string) =>
+      request<AdminPulse>(getToken, `/api/pools/${poolId}/admin`),
+
+    remindNow: (poolId: string) =>
+      request<{ ok: true; sent: number }>(getToken, `/api/pools/${poolId}/admin`, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'remind' }),
+      }),
+
+    announce: (poolId: string, subject: string, body: string) =>
+      request<{ ok: true; sent: number; failed: number }>(
+        getToken,
+        `/api/pools/${poolId}/admin`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: 'announce', subject, body }),
+        }
+      ),
 
     setPoolAdmin: (poolId: string, entryId: string, isAdmin: boolean) =>
       request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {
