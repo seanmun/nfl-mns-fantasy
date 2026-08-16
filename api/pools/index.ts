@@ -5,7 +5,7 @@ import { verifyAuth } from '../_middleware.js'
 import { ensureUser } from '../_ensureUser.js'
 import { applyCors, generateJoinCode } from '../_pool.js'
 import { nflPoolEntries, nflPools } from '../../src/lib/db/schema.js'
-import type { DeadlineAnchor, PoolType, SpreadMode } from '../../src/lib/db/schema.js'
+import type { DeadlineAnchor, PoolType, PrizesConfig, SpreadMode } from '../../src/lib/db/schema.js'
 import { DEFAULT_SCORING } from '../../src/lib/scoring/config.js'
 
 // The create-pool request body. Every field optional because the client
@@ -28,6 +28,7 @@ interface CreatePoolBody {
   reminderHoursBefore: number | null
   // Admin overrides on top of DEFAULT_SCORING for the chosen type.
   scoring: Record<string, unknown>
+  prizes: PrizesConfig | null
   entryName: string
 }
 
@@ -77,6 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     deadlineOffsetMinutes = 0,
     reminderHoursBefore = 24,
     scoring = {},
+    prizes = null,
     entryName,
   } = body
 
@@ -99,6 +101,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (startWeek < 1 || endWeek > 18 || startWeek > endWeek) {
     return res.status(400).json({ error: 'Those weeks do not make sense.' })
+  }
+
+  // Prize rules: sanitised, never trusted raw. Every number is clamped
+  // to something a leaderboard can honour, and segments must live inside
+  // the pool's own weeks.
+  let prizesConfig: PrizesConfig | null = null
+  if (prizes && typeof prizes === 'object') {
+    const seasonPlaces = Math.max(1, Math.min(100, Number(prizes.seasonPlaces) || 1))
+    const keyPlaces = Math.max(0, Math.min(100, Number(prizes.keyPlaces) || 0))
+    const lastPlace = prizes.lastPlace === true
+    const segments = Array.isArray(prizes.segments)
+      ? prizes.segments.slice(0, 12).map((s, i) => ({
+          name: String(s?.name ?? '').trim() || `Segment ${String.fromCharCode(65 + i)}`,
+          startWeek: Number(s?.startWeek),
+          endWeek: Number(s?.endWeek),
+          places: Math.max(1, Math.min(100, Number(s?.places) || 1)),
+        }))
+      : []
+    for (const s of segments) {
+      if (
+        !Number.isInteger(s.startWeek) ||
+        !Number.isInteger(s.endWeek) ||
+        s.startWeek < startWeek ||
+        s.endWeek > endWeek ||
+        s.startWeek > s.endWeek
+      ) {
+        return res.status(400).json({
+          error: `${s.name}: weeks ${s.startWeek}–${s.endWeek} fall outside this pool's weeks ${startWeek}–${endWeek}.`,
+        })
+      }
+    }
+    prizesConfig = { seasonPlaces, keyPlaces, lastPlace, segments }
   }
 
   // Scoring is frozen at creation from the single source in
@@ -134,6 +168,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reminderHoursBefore,
         joinCode: generateJoinCode(),
         scoringConfig,
+        prizesConfig,
       })
       .returning()
 

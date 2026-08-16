@@ -155,6 +155,12 @@ export interface CreatePoolInput {
   deadlineOffsetMinutes: number
   reminderHoursBefore: number | null
   scoring: Record<string, unknown>
+  prizes?: {
+    seasonPlaces: number
+    keyPlaces: number
+    lastPlace: boolean
+    segments: Array<{ name: string; startWeek: number; endWeek: number; places: number }>
+  } | null
   entryName: string
 }
 
@@ -197,10 +203,37 @@ export interface StandingsRow {
   weekly: StandingsWeekCell[]
 }
 
+export interface WinnerRef {
+  entryId: string
+  entryName: string
+  ownerName: string | null
+  points: number
+  rank: number
+}
+
+export interface WinnersCircle {
+  season: WinnerRef[]
+  seasonPlaces: number
+  key: WinnerRef[]
+  keyPlaces: number
+  lastPlace: WinnerRef[]
+  lastPlaceEnabled: boolean
+  segments: Array<{
+    name: string
+    startWeek: number
+    endWeek: number
+    places: number
+    complete: boolean
+    winners: WinnerRef[]
+  }>
+}
+
 export interface StandingsResponse {
   // True only when the pool's last week is fully decided — the signal
   // for the season-end presentation.
   final: boolean
+  // Null when the pool has no prize config.
+  winners: WinnersCircle | null
   weeks: Array<{ week: number; label: string }>
   rows: StandingsRow[]
 }

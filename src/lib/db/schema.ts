@@ -232,6 +232,19 @@ export const nflPools = nflSchema.table('pools', {
   status: text('status').$type<PoolStatus>().notNull().default('open'),
   scoringConfig: jsonb('scoring_config').$type<Record<string, unknown>>().notNull(),
 
+  // Payout structure — who lands in the winners circle. Prize rules,
+  // not scoring rules: they never change a point total, only which rows
+  // get celebrated, so they sit beside scoringConfig rather than inside
+  // it. Null means the pool predates prizes (winner-take-first shown).
+  //
+  //   seasonPlaces  top N season-points places (ties included by rank)
+  //   keyPlaces     top N key-pick places, 0 = none
+  //   lastPlace     celebrate the season's last place
+  //   segments      [{ name, startWeek, endWeek, places }] — any
+  //                 grouping of weeks; each pays its own top-N on the
+  //                 points earned inside that span.
+  prizesConfig: jsonb('prizes_config').$type<PrizesConfig>(),
+
   // How pool_weeks.pickDeadlineAt is computed when a week is published.
   // Operational settings, deliberately columns rather than scoringConfig
   // keys: the admin may change these mid-season, whereas scoringConfig is
@@ -572,6 +585,20 @@ export const nflPoolAnnouncements = nflSchema.table('pool_announcements', {
 // ESPN calendar sync — which only ever writes pre/regular/post — can
 // never collide with them, and tearing the whole test down is one delete
 // of every week where season_type = 'test'.
+export interface PrizeSegment {
+  name: string
+  startWeek: number
+  endWeek: number
+  places: number
+}
+
+export interface PrizesConfig {
+  seasonPlaces: number
+  keyPlaces: number
+  lastPlace: boolean
+  segments: PrizeSegment[]
+}
+
 export type SeasonType = 'pre' | 'regular' | 'post' | 'test'
 export type GameStatus = 'scheduled' | 'in_progress' | 'final' | 'postponed' | 'cancelled'
 // Where a pool's official spread came from: 'api' is the untouched

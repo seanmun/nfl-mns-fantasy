@@ -13,6 +13,7 @@ import {
   users,
 } from '../../../src/lib/db/schema.js'
 import { rankStandings } from '../../../src/lib/scoring/standings.js'
+import type { PrizesConfig } from '../../../src/lib/db/schema.js'
 
 // GET /api/pools/:id/standings — the leaderboard.
 //
@@ -158,8 +159,124 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const byEntry = new Map(entries.map((e) => [e.id, e]))
   const weeksSorted = [...poolWeeks].sort((a, b) => a.week - b.week)
 
+  // ── Winners circle ──────────────────────────────────────────────
+  // Prize computation is read-only and summary-scale: winner rows only,
+  // never full tables. Segments pay out as soon as THEIR weeks are all
+  // decided; season/key/last-place wait for the whole season.
+  const prizes = (ctx.pool.prizesConfig ?? null) as PrizesConfig | null
+  let winners = null
+  if (prizes) {
+    const nameOf = (entryId: string) => {
+      const e = byEntry.get(entryId)
+      return {
+        entryId,
+        entryName: e?.entryName ?? 'Entry',
+        ownerName: e ? nameByUser.get(e.userId) ?? null : null,
+      }
+    }
+
+    // Per-week decidedness for segment payouts, one query for the pool.
+    const slateStatus = await db
+      .select({
+        weekId: nflPoolGames.weekId,
+        isIncluded: nflPoolGames.isIncluded,
+        status: nflGames.status,
+      })
+      .from(nflPoolGames)
+      .innerJoin(nflGames, eq(nflGames.id, nflPoolGames.gameId))
+      .where(eq(nflPoolGames.poolId, poolId))
+    const weekDecided = (weekId: string) => {
+      const games = slateStatus.filter((g) => g.weekId === weekId && g.isIncluded)
+      return (
+        games.length > 0 &&
+        games.every((g) => g.status === 'final' || g.status === 'cancelled')
+      )
+    }
+    const weekIdByNo = new Map(weeksSorted.map((w) => [w.week, w.weekId]))
+
+    const rankRows = (rows: Array<{ entryId: string; points: number }>) => {
+      const sorted = [...rows].sort((a, b) => b.points - a.points)
+      let rank = 0
+      return sorted.map((row, i) => {
+        if (!(i > 0 && sorted[i - 1].points === row.points)) rank = i + 1
+        return { ...row, rank }
+      })
+    }
+
+    const segments = prizes.segments.map((seg) => {
+      const weekNos = Array.from(
+        { length: seg.endWeek - seg.startWeek + 1 },
+        (_, i) => seg.startWeek + i
+      )
+      const ids = weekNos.map((n) => weekIdByNo.get(n)).filter((x): x is string => !!x)
+      // Every week in the span must exist AND be decided before a
+      // segment pays — a "winner" with games outstanding is a lie.
+      const complete = ids.length === weekNos.length && ids.every(weekDecided)
+      const totals = entries.map((e) => ({
+        entryId: e.id,
+        points: weekRows
+          .filter((r) => r.entryId === e.id && ids.includes(r.weekId))
+          .reduce((n, r) => n + r.points, 0),
+      }))
+      const rankedSeg = rankRows(totals)
+      return {
+        name: seg.name,
+        startWeek: seg.startWeek,
+        endWeek: seg.endWeek,
+        places: seg.places,
+        complete,
+        winners: complete
+          ? rankedSeg
+              .filter((r) => r.rank <= seg.places)
+              .map((r) => ({ ...nameOf(r.entryId), points: r.points, rank: r.rank }))
+          : [],
+      }
+    })
+
+    // Key ranking mirrors the client's tab-2 order.
+    const keyRanked = [...ranked].sort(
+      (a, b) => b.keyPickScore - a.keyPickScore || b.totalPoints - a.totalPoints
+    )
+    let kRank = 0
+    const keyWithRank = keyRanked.map((r, i) => {
+      const prev = keyRanked[i - 1]
+      if (!(prev && prev.keyPickScore === r.keyPickScore && prev.totalPoints === r.totalPoints))
+        kRank = i + 1
+      return { ...r, keyRank: kRank }
+    })
+
+    const bottomPoints = ranked.length
+      ? Math.min(...ranked.map((r) => r.totalPoints))
+      : null
+
+    winners = {
+      season: seasonOver
+        ? ranked
+            .filter((r) => r.rank <= prizes.seasonPlaces)
+            .map((r) => ({ ...nameOf(r.entryId), points: r.totalPoints, rank: r.rank }))
+        : [],
+      seasonPlaces: prizes.seasonPlaces,
+      key:
+        seasonOver && prizes.keyPlaces > 0
+          ? keyWithRank
+              .filter((r) => r.keyRank <= prizes.keyPlaces)
+              .map((r) => ({ ...nameOf(r.entryId), points: r.keyPickScore, rank: r.keyRank }))
+          : [],
+      keyPlaces: prizes.keyPlaces,
+      lastPlace:
+        seasonOver && prizes.lastPlace && bottomPoints != null
+          ? ranked
+              .filter((r) => r.totalPoints === bottomPoints)
+              .map((r) => ({ ...nameOf(r.entryId), points: r.totalPoints, rank: r.rank }))
+          : [],
+      lastPlaceEnabled: prizes.lastPlace,
+      segments,
+    }
+  }
+
   return res.status(200).json({
     final: seasonOver,
+    winners,
     weeks: weeksSorted.map((w) => ({ week: w.week, label: w.label })),
     rows: ranked.map((r) => {
       const entry = byEntry.get(r.entryId)!

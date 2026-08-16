@@ -5,6 +5,45 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createApi, type StandingsRow } from '@/lib/api/client'
 
+function WinnersBlock({
+  title,
+  rows,
+  unit,
+}: {
+  title: string
+  rows: Array<{ entryId: string; entryName: string; ownerName: string | null; points: number; rank: number }>
+  unit: string
+}) {
+  return (
+    <div>
+      <p className="font-bold mb-1">{title}</p>
+      <ul className="flex flex-col gap-1">
+        {rows.map((r) => (
+          <li
+            key={r.entryId}
+            className="flex items-baseline justify-between gap-2 rounded bg-[var(--color-muted)] px-2.5 py-1.5 tabular-nums"
+          >
+            <span className="truncate">
+              <b>
+                {r.rank}. {r.entryName}
+              </b>
+              {r.ownerName ? (
+                <span className="text-[0.8rem] text-[var(--color-muted-foreground)]">
+                  {' '}
+                  · {r.ownerName}
+                </span>
+              ) : null}
+            </span>
+            <span className="shrink-0 text-[var(--color-muted-foreground)]">
+              {r.points} {unit}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // Season-end tab 2: the same rows re-ranked by the key-pick score.
 // Competition ranking again — level entries share, the next skips.
 function rankByKey(rows: StandingsRow[]): StandingsRow[] {
@@ -94,6 +133,57 @@ export function PoolStandings() {
             {champions[0].totalPoints} points · key ★ {champions[0].keyPickScore}
           </p>
         </div>
+      ) : null}
+
+      {data.winners &&
+      (data.final || data.winners.segments.some((s) => s.complete)) ? (
+        <section className="rounded-xl border border-[var(--color-key)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
+          <h2 className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-key)]">
+            Winners circle
+          </h2>
+
+          {data.final && data.winners.season.length ? (
+            <WinnersBlock
+              title={`Season points — top ${data.winners.seasonPlaces}`}
+              rows={data.winners.season}
+              unit="pts"
+            />
+          ) : null}
+
+          {data.final && data.winners.key.length ? (
+            <WinnersBlock
+              title={`Key picks ★ — top ${data.winners.keyPlaces}`}
+              rows={data.winners.key}
+              unit="key ★"
+            />
+          ) : null}
+
+          {data.final && data.winners.lastPlace.length ? (
+            <WinnersBlock
+              title="Last place"
+              rows={data.winners.lastPlace}
+              unit="pts"
+            />
+          ) : null}
+
+          {data.winners.segments.map((s) =>
+            s.complete && s.winners.length ? (
+              <WinnersBlock
+                key={s.name}
+                title={`${s.name} (weeks ${s.startWeek}–${s.endWeek}) — top ${s.places}`}
+                rows={s.winners}
+                unit="pts"
+              />
+            ) : null
+          )}
+
+          {!data.final &&
+          data.winners.segments.every((s) => !s.complete) ? null : !data.final ? (
+            <p className="text-[0.85rem] text-[var(--color-muted-foreground)]">
+              Season prizes land here when the last week is decided.
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {data.final ? (

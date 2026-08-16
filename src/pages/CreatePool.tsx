@@ -45,6 +45,14 @@ export function CreatePool() {
   const [sundayDeadline, setSundayDeadline] = useState(true)
   const [reminders, setReminders] = useState(true)
 
+  // Winners circle — payout places, not scoring. See PrizesConfig.
+  const [seasonPlaces, setSeasonPlaces] = useState(1)
+  const [keyPlaces, setKeyPlaces] = useState(0)
+  const [lastPlace, setLastPlace] = useState(false)
+  const [segments, setSegments] = useState<
+    Array<{ name: string; startWeek: number; endWeek: number; places: number }>
+  >([])
+
   // Survivor has no spread to beat, so the server forces straight-up.
   // Reflected here rather than letting the form imply otherwise.
   const spreadMode = poolType === 'survivor' ? 'straight_up' : ats ? 'ats' : 'straight_up'
@@ -95,7 +103,14 @@ export function CreatePool() {
         deadlineOffsetMinutes: 0,
         reminderHoursBefore: reminders ? 24 : null,
         scoring,
-        entryName: entryName.trim() || 'My entry',
+        prizes: {
+          seasonPlaces,
+          keyPlaces: usesKeyPick ? keyPlaces : 0,
+          lastPlace,
+          segments,
+        },
+        // Blank falls back server-side to the member's handle.
+        entryName: entryName.trim(),
       }),
     onSuccess: (r) => {
       toast.success('Pool created')
@@ -222,6 +237,145 @@ export function CreatePool() {
           ) : null}
         </Section>
       ) : null}
+
+      <Section title="Winners circle">
+        <Field
+          label="Season points pays out the top"
+          hint="How many places win on total season points. Ties share a place."
+        >
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={seasonPlaces}
+            onChange={(e) => setSeasonPlaces(Math.max(1, Number(e.target.value) || 1))}
+            className={inputClass + ' w-28 text-center'}
+          />
+        </Field>
+        {usesKeyPick ? (
+          <Field
+            label="Key picks ★ pays out the top"
+            hint="0 means the key total only breaks ties and pays nothing."
+          >
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={keyPlaces}
+              onChange={(e) => setKeyPlaces(Math.max(0, Number(e.target.value) || 0))}
+              className={inputClass + ' w-28 text-center'}
+            />
+          </Field>
+        ) : null}
+        <Toggle
+          checked={lastPlace}
+          onChange={setLastPlace}
+          label="Last place wins something"
+          hint="The season's last place joins the winners circle. Every pool has one hero."
+        />
+
+        <div className="flex flex-col gap-3">
+          <p className="font-semibold">
+            Segments
+            <span className="block text-[0.85rem] font-normal text-[var(--color-muted-foreground)]">
+              Extra races over any span of weeks — bi-weekly, monthly, thirds of the
+              season. Each pays its own top places on points earned inside the span.
+            </span>
+          </p>
+          {segments.map((s, i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-[var(--color-border)] p-3 flex flex-wrap items-end gap-3"
+            >
+              <label className="flex flex-col gap-1 text-[0.85rem] font-semibold">
+                Name
+                <input
+                  value={s.name}
+                  onChange={(e) =>
+                    setSegments(segments.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
+                  }
+                  className={inputClass + ' w-36'}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[0.85rem] font-semibold">
+                Weeks
+                <span className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={startWeek}
+                    max={endWeek}
+                    value={s.startWeek}
+                    onChange={(e) =>
+                      setSegments(
+                        segments.map((x, j) =>
+                          j === i ? { ...x, startWeek: Number(e.target.value) } : x
+                        )
+                      )
+                    }
+                    className={inputClass + ' w-20 text-center'}
+                  />
+                  &ndash;
+                  <input
+                    type="number"
+                    min={startWeek}
+                    max={endWeek}
+                    value={s.endWeek}
+                    onChange={(e) =>
+                      setSegments(
+                        segments.map((x, j) =>
+                          j === i ? { ...x, endWeek: Number(e.target.value) } : x
+                        )
+                      )
+                    }
+                    className={inputClass + ' w-20 text-center'}
+                  />
+                </span>
+              </label>
+              <label className="flex flex-col gap-1 text-[0.85rem] font-semibold">
+                Pays top
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={s.places}
+                  onChange={(e) =>
+                    setSegments(
+                      segments.map((x, j) =>
+                        j === i ? { ...x, places: Math.max(1, Number(e.target.value) || 1) } : x
+                      )
+                    )
+                  }
+                  className={inputClass + ' w-20 text-center'}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setSegments(segments.filter((_, j) => j !== i))}
+                className="min-h-[var(--tap-target-min)] px-3 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold text-[var(--color-muted-foreground)]"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setSegments([
+                ...segments,
+                {
+                  name: `Segment ${String.fromCharCode(65 + segments.length)}`,
+                  startWeek,
+                  endWeek,
+                  places: 1,
+                },
+              ])
+            }
+            className="min-h-[var(--tap-target-min)] rounded-lg border-2 border-dashed border-[var(--color-border-interactive)] font-bold text-[var(--color-muted-foreground)]"
+          >
+            + Add a segment
+          </button>
+        </div>
+      </Section>
 
       <Section title="Timing">
         <div className="flex gap-3">
