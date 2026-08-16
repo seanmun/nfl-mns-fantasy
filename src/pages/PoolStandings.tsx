@@ -1,9 +1,25 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { createApi } from '@/lib/api/client'
+import { createApi, type StandingsRow } from '@/lib/api/client'
+
+// Season-end tab 2: the same rows re-ranked by the key-pick score.
+// Competition ranking again — level entries share, the next skips.
+function rankByKey(rows: StandingsRow[]): StandingsRow[] {
+  const sorted = [...rows].sort(
+    (a, b) => b.keyPickScore - a.keyPickScore || b.totalPoints - a.totalPoints
+  )
+  let rank = 0
+  return sorted.map((row, i) => {
+    const prev = sorted[i - 1]
+    const tied =
+      prev && prev.keyPickScore === row.keyPickScore && prev.totalPoints === row.totalPoints
+    if (!tied) rank = i + 1
+    return { ...row, rank }
+  })
+}
 
 // The leaderboard. Total points ranks it, key-pick score breaks ties —
 // the same two columns the comparator uses, in the same order, so what
@@ -14,6 +30,7 @@ export function PoolStandings() {
   const api = useMemo(() => createApi(getToken), [getToken])
 
   const qc = useQueryClient()
+  const [tab, setTab] = useState<'points' | 'key'>('points')
   const { data, isLoading, error } = useQuery({
     queryKey: ['standings', poolId],
     queryFn: () => api.getStandings(poolId),
@@ -45,9 +62,11 @@ export function PoolStandings() {
   }
 
   const graded = data.rows.some((r) => r.weekly.some((w) => w.points != null))
+  const rows = data.final && tab === 'key' ? rankByKey(data.rows) : data.rows
+  const champions = data.final ? data.rows.filter((r) => r.rank === 1) : []
 
   return (
-    <div className="px-4 py-6 flex flex-col gap-4">
+    <div className="max-w-xl mx-auto w-full px-4 py-6 flex flex-col gap-4">
       <div>
         <Link
           to={`/pool/${poolId}`}
@@ -55,8 +74,53 @@ export function PoolStandings() {
         >
           &larr; Pool home
         </Link>
-        <h1 className="text-[1.7rem] font-extrabold leading-tight">Standings</h1>
+        <h1 className="text-[1.7rem] font-extrabold leading-tight">
+          {data.final ? 'Final standings' : 'Standings'}
+        </h1>
       </div>
+
+      {data.final && champions.length ? (
+        <div className="rounded-xl border-2 border-[var(--color-key)] bg-[var(--color-card)] p-5 text-center">
+          <p className="text-[2rem] leading-none" aria-hidden="true">
+            &#127942;
+          </p>
+          <p className="mt-2 text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-key)]">
+            {champions.length > 1 ? 'Champions' : 'Champion'}
+          </p>
+          <p className="text-[1.4rem] font-extrabold">
+            {champions.map((c) => c.entryName).join(' & ')}
+          </p>
+          <p className="text-[var(--color-muted-foreground)] tabular-nums">
+            {champions[0].totalPoints} points · key ★ {champions[0].keyPickScore}
+          </p>
+        </div>
+      ) : null}
+
+      {data.final ? (
+        <div className="flex gap-2" role="tablist" aria-label="Final rankings">
+          {(
+            [
+              ['points', 'Season points'],
+              ['key', 'Key picks ★'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={
+                'flex-1 min-h-[var(--tap-target-min)] rounded-lg border-2 font-bold ' +
+                (tab === key
+                  ? 'bg-[var(--color-foreground)] text-[var(--color-background)] border-[var(--color-foreground)]'
+                  : 'border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]')
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {!graded ? (
         <p className="text-[var(--color-muted-foreground)] leading-relaxed">
@@ -78,7 +142,7 @@ export function PoolStandings() {
             </tr>
           </thead>
           <tbody>
-            {data.rows.map((r) => {
+            {rows.map((r) => {
               const w = r.weekly.reduce((n, x) => n + x.correct, 0)
               const l = r.weekly.reduce((n, x) => n + x.incorrect, 0)
               const p = r.weekly.reduce((n, x) => n + x.push, 0)

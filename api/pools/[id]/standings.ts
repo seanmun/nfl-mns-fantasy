@@ -4,7 +4,9 @@ import { db } from '../../_db.js'
 import { applyCors, loadCtx, requirePoolAdmin } from '../../_pool.js'
 import {
   nflEntryWeeks,
+  nflGames,
   nflPoolEntries,
+  nflPoolGames,
   nflPoolWeeks,
   nflWeeks,
   users,
@@ -105,6 +107,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         )
     : []
 
+  // ── Is the season over? ─────────────────────────────────────────
+  // Over means the pool's LAST week is fully decided: its slate exists
+  // and every included game is final (or cancelled), with no pick still
+  // pending a grade. Only then do the standings become "final" — a
+  // legitimate-looking final table with one game outstanding is exactly
+  // the wrong thing to publish.
+  let seasonOver = false
+  const [lastWeek] = await db
+    .select({ id: nflWeeks.id })
+    .from(nflWeeks)
+    .where(
+      and(
+        eq(nflWeeks.season, ctx.pool.season),
+        eq(nflWeeks.seasonType, ctx.pool.seasonType),
+        eq(nflWeeks.week, ctx.pool.endWeek)
+      )
+    )
+    .limit(1)
+  if (lastWeek) {
+    const lastSlate = await db
+      .select({ status: nflGames.status, isIncluded: nflPoolGames.isIncluded })
+      .from(nflPoolGames)
+      .innerJoin(nflGames, eq(nflGames.id, nflPoolGames.gameId))
+      .where(
+        and(eq(nflPoolGames.poolId, poolId), eq(nflPoolGames.weekId, lastWeek.id))
+      )
+    const included = lastSlate.filter((g) => g.isIncluded)
+    seasonOver =
+      included.length > 0 &&
+      included.every((g) => g.status === 'final' || g.status === 'cancelled')
+  }
+
   const ranked = rankStandings(
     entries.map((e) => ({
       entryId: e.id,
@@ -117,6 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const weeksSorted = [...poolWeeks].sort((a, b) => a.week - b.week)
 
   return res.status(200).json({
+    final: seasonOver,
     weeks: weeksSorted.map((w) => ({ week: w.week, label: w.label })),
     rows: ranked.map((r) => {
       const entry = byEntry.get(r.entryId)!

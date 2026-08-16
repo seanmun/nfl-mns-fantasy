@@ -198,6 +198,9 @@ export interface StandingsRow {
 }
 
 export interface StandingsResponse {
+  // True only when the pool's last week is fully decided — the signal
+  // for the season-end presentation.
+  final: boolean
   weeks: Array<{ week: number; label: string }>
   rows: StandingsRow[]
 }
