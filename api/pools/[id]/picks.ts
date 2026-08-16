@@ -244,7 +244,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   )
   const recaps = myEntryIds.map((id) => {
     const mine = gradedRows
-      .filter((r) => r.entryId === id && r.gradedAt != null)
+      // The week on screen is the hero's job — a recap of a half-graded
+      // current week just repeats it. Recaps are PRIOR weeks only.
+      .filter((r) => r.entryId === id && r.gradedAt != null && r.weekId !== week.id)
       .sort(
         (a, b) => (weekNoById.get(b.weekId)?.week ?? 0) - (weekNoById.get(a.weekId)?.week ?? 0)
       )

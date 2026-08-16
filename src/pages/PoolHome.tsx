@@ -3,14 +3,20 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { createApi, type ApiPick, type ApiSlateGame, type PicksResponse } from '@/lib/api/client'
+import {
+  createApi,
+  type ApiPick,
+  type ApiSlateGame,
+  type PicksResponse,
+  type StandingsRow,
+} from '@/lib/api/client'
 import { kickoffLabel } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
 
-// The pool's front door, rebuilt around one question: what does a member
-// need the moment they open it this week? The hero answers for the
-// week's current state — pick, locked-in, live, or graded — and
-// everything below it is glanceable context, not chrome.
+// The pool's front door. One hero per entry carries the week's answer —
+// pick, locked in, live, graded — with the entry's rank riding on it.
+// Below: one row of three stat tiles, then admin, note, actions. Info
+// appears exactly once; the hero is visually the loudest thing here.
 export function PoolHome() {
   const { id: poolId = '' } = useParams()
   const { getToken } = useAuth()
@@ -44,8 +50,7 @@ export function PoolHome() {
     onError: (e: Error) => toast.error(e.message),
   })
 
-  // Explicit second-entry flow: open the name field, name it, add. The
-  // ONLY way an extra entry comes to exist.
+  // Explicit second-entry flow — the ONLY way an extra entry exists.
   const [addingName, setAddingName] = useState<string | null>(null)
   const addEntry = useMutation({
     mutationFn: (name: string) => api.joinPool({ poolId, addEntry: true, entryName: name }),
@@ -78,11 +83,32 @@ export function PoolHome() {
   const allFinal =
     data.slate.length > 0 &&
     data.slate.every((g) => g.status === 'final' || g.status === 'cancelled')
-  const myRows = (standings.data?.rows ?? []).filter((r) => r.isMine)
+  const rowByEntry = new Map<string, StandingsRow>(
+    (standings.data?.rows ?? []).map((r) => [r.entryId, r])
+  )
   const leader = standings.data?.rows[0]
+  const myBest = data.entries
+    .map((e) => rowByEntry.get(e.id))
+    .filter((r): r is StandingsRow => !!r)
+    .sort((a, b) => a.rank - b.rank)[0]
+  const recap = data.recaps[0] ?? null
+
+  // The week's one status line — everything else stops repeating it.
+  const statusLine = !data.published
+    ? 'Not open yet — waiting on the manager'
+    : anyLive
+      ? 'Games are LIVE'
+      : allFinal && deadlinePassed
+        ? 'Week final'
+        : deadlinePassed
+          ? 'Picks are locked'
+          : data.deadline
+            ? `Picks close ${kickoffLabel(data.deadline)}`
+            : 'Picks are open'
 
   return (
-    <div className="px-4 py-6 flex flex-col gap-5">
+    <div className="max-w-xl mx-auto w-full px-4 py-6 flex flex-col gap-4">
+      {/* ── Header: title once, week once, state once ── */}
       <div>
         <Link
           to="/"
@@ -90,14 +116,24 @@ export function PoolHome() {
         >
           &larr; My pools
         </Link>
-        <div className="flex items-baseline justify-between gap-3">
-          <h1 className="text-[1.7rem] font-extrabold leading-tight text-balance">
-            {data.pool.name}
-          </h1>
-          <span className="shrink-0 text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)]">
+        <h1 className="text-[1.7rem] font-extrabold leading-tight text-balance">
+          {data.pool.name}
+        </h1>
+        <p className="mt-1 text-[1.05rem]">
+          <span className="font-bold text-[var(--color-accent)] uppercase tracking-[0.1em] text-[0.8rem]">
             {data.week.label}
           </span>
-        </div>
+          <span className="mx-2 text-[var(--color-border-interactive)]">|</span>
+          <span
+            className={
+              anyLive
+                ? 'font-bold text-[var(--color-pick-win)]'
+                : 'text-[var(--color-muted-foreground)]'
+            }
+          >
+            {statusLine}
+          </span>
+        </p>
       </div>
 
       {justSubmitted ? (
@@ -110,7 +146,7 @@ export function PoolHome() {
         </div>
       ) : null}
 
-      {/* ── The hero: one card per entry, tuned to the week's state ── */}
+      {/* ── HERO ── */}
       {data.entries.map((e) => (
         <EntryHero
           key={e.id}
@@ -119,7 +155,7 @@ export function PoolHome() {
           need={need}
           deadlinePassed={deadlinePassed}
           anyLive={anyLive}
-          allFinal={allFinal}
+          standing={rowByEntry.get(e.id) ?? null}
           poolId={poolId}
           renaming={renaming?.id === e.id ? renaming : null}
           onRenameStart={() => setRenaming({ id: e.id, value: e.entryName })}
@@ -132,103 +168,99 @@ export function PoolHome() {
         />
       ))}
 
-      {/* ── My standing strip ── */}
-      {myRows.length > 0 && leader ? (
+      {/* ── Stat tiles: rank · last week · picks in ── */}
+      <div className="grid grid-cols-3 gap-2">
         <Link
           to={`/pool/${poolId}/standings`}
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex items-center gap-4"
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 flex flex-col gap-0.5"
         >
-          {myRows.slice(0, 1).map((r) => (
-            <span key={r.entryId} className="flex-1 flex items-baseline gap-3 tabular-nums">
-              <b className="text-[1.6rem]">#{r.rank}</b>
-              <span className="text-[var(--color-muted-foreground)]">
-                {r.totalPoints} pts
-                {r.rank !== 1
-                  ? ` · ${leader.totalPoints - r.totalPoints} behind the leader`
-                  : ' · leading'}
-              </span>
-            </span>
-          ))}
-          <span className="text-[var(--color-accent)] font-bold">Standings &rsaquo;</span>
-        </Link>
-      ) : null}
-
-      {/* ── Last week's recap ── */}
-      {data.recaps.map((r) => (
-        <div
-          key={r.entryId}
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4"
-        >
-          <p className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-muted-foreground)] mb-1">
-            {r.weekLabel} result
-          </p>
-          <p className="text-[1.05rem] tabular-nums">
-            <b>
-              {r.correct}&ndash;{r.incorrect}
-              {r.push ? <>&ndash;{r.push}</> : null}
-            </b>{' '}
-            · +{r.points} pts
-            {r.rankChange != null && r.rankChange !== 0 ? (
-              <span
-                className={
-                  'ml-2 font-bold ' +
-                  (r.rankChange > 0
-                    ? 'text-[var(--color-pick-win)]'
-                    : 'text-[var(--color-pick-loss)]')
-                }
-              >
-                {r.rankChange > 0 ? `▲ up ${r.rankChange}` : `▼ down ${-r.rankChange}`}
-              </span>
-            ) : null}
-          </p>
-        </div>
-      ))}
-
-      {/* ── Pool pulse ── */}
-      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex items-center justify-between gap-3">
-        <span className="tabular-nums">
-          <b>
-            {data.pulse.entriesComplete} of {data.pulse.entriesTotal}
-          </b>{' '}
-          <span className="text-[var(--color-muted-foreground)]">
-            entries have their picks in
+          <span className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-muted-foreground)]">
+            Rank
           </span>
-        </span>
-        {data.revealed ? (
-          <Link to={`/pool/${poolId}/picks`} className="font-bold text-[var(--color-accent)]">
-            See everyone&rsquo;s &rsaquo;
-          </Link>
-        ) : null}
+          <b className="text-[1.5rem] leading-none tabular-nums">
+            {myBest ? `#${myBest.rank}` : '—'}
+          </b>
+          <span className="text-[0.78rem] text-[var(--color-muted-foreground)]">
+            {myBest && leader
+              ? myBest.rank === 1
+                ? 'leading'
+                : `${leader.totalPoints - myBest.totalPoints} behind`
+              : ''}
+          </span>
+        </Link>
+
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 flex flex-col gap-0.5">
+          <span className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-muted-foreground)]">
+            Last week
+          </span>
+          <b className="text-[1.5rem] leading-none tabular-nums">
+            {recap ? `${recap.correct}–${recap.incorrect}` : '—'}
+          </b>
+          <span className="text-[0.78rem] text-[var(--color-muted-foreground)]">
+            {recap ? (
+              <>
+                +{recap.points} pts
+                {recap.rankChange != null && recap.rankChange !== 0 ? (
+                  <b
+                    className={
+                      recap.rankChange > 0
+                        ? ' text-[var(--color-pick-win)]'
+                        : ' text-[var(--color-pick-loss)]'
+                    }
+                  >
+                    {' '}
+                    {recap.rankChange > 0 ? `▲${recap.rankChange}` : `▼${-recap.rankChange}`}
+                  </b>
+                ) : null}
+              </>
+            ) : (
+              'nothing graded yet'
+            )}
+          </span>
+        </div>
+
+        <Link
+          to={`/pool/${poolId}/picks`}
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 flex flex-col gap-0.5"
+        >
+          <span className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-muted-foreground)]">
+            Picks in
+          </span>
+          <b className="text-[1.5rem] leading-none tabular-nums">
+            {data.pulse.entriesComplete}/{data.pulse.entriesTotal}
+          </b>
+          <span className="text-[0.78rem] text-[var(--color-accent)] font-bold">
+            {data.revealed ? 'see everyone’s ›' : 'entries'}
+          </span>
+        </Link>
       </div>
 
-      {/* ── Admin card ── */}
+      {/* ── Admin ── */}
       {data.manager ? (
-        <div className="rounded-xl border border-[var(--color-key)] bg-[var(--color-card)] p-4 flex flex-col gap-2">
-          <p className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-key)]">
-            Admin
-          </p>
-          <p className="text-[var(--color-muted-foreground)]">
-            {data.published
-              ? `${data.week.label} is published${
-                  data.deadline ? ` — picks close ${kickoffLabel(data.deadline)}` : ''
-                }.`
-              : `${data.week.label} is NOT published — members cannot pick until you publish.`}
-            {!deadlinePassed && data.pulse.entriesComplete < data.pulse.entriesTotal
-              ? ` ${data.pulse.entriesTotal - data.pulse.entriesComplete} still short.`
-              : ''}
-          </p>
+        <div className="rounded-xl border border-[var(--color-key)] bg-[var(--color-card)] p-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-key)]">
+              Admin
+            </p>
+            <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
+              {data.published ? 'Published' : 'NOT published'}
+              {!deadlinePassed && data.pulse.entriesComplete < data.pulse.entriesTotal
+                ? ` · ${data.pulse.entriesTotal - data.pulse.entriesComplete} short on picks`
+                : ''}
+            </p>
+          </div>
           <Link
             to={`/lm/${poolId}/week`}
-            className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg border-2 border-[var(--color-key)] font-bold text-[var(--color-key)]"
+            className="shrink-0 min-h-[var(--tap-target-min)] px-4 flex items-center rounded-lg border-2 border-[var(--color-key)] font-bold text-[var(--color-key)]"
           >
-            Manage this week
+            Manage
           </Link>
         </div>
       ) : null}
 
       {data.pool.managerNote ? (
         <div className="rounded-xl border border-[var(--color-border)] border-l-4 border-l-[var(--color-accent)] bg-[var(--color-card)] p-4">
-          <h2 className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)] mb-2">
+          <h2 className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-accent)] mb-2">
             Note from the manager
           </h2>
           <Markdown source={data.pool.managerNote} />
@@ -280,18 +312,13 @@ export function PoolHome() {
           </div>
         )
       ) : null}
-
-      <Link
-        to={`/pool/${poolId}/standings`}
-        className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-      >
-        Standings
-      </Link>
     </div>
   )
 }
 
-// ── The state-aware hero card for one entry ─────────────────────────
+// ── The hero card for one entry ─────────────────────────────────────
+// Accent-edged and the biggest thing on the page. Carries the entry's
+// name, its rank, and the week's state for THIS entry.
 
 function EntryHero({
   data,
@@ -299,7 +326,7 @@ function EntryHero({
   need,
   deadlinePassed,
   anyLive,
-  allFinal,
+  standing,
   poolId,
   renaming,
   onRenameStart,
@@ -313,7 +340,7 @@ function EntryHero({
   need: number
   deadlinePassed: boolean
   anyLive: boolean
-  allFinal: boolean
+  standing: StandingsRow | null
   poolId: string
   renaming: { id: string; value: string } | null
   onRenameStart: () => void
@@ -329,7 +356,7 @@ function EntryHero({
   const gameById = new Map(data.slate.map((g) => [g.gameId, g]))
 
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
+    <div className="rounded-xl border border-[var(--color-border)] border-l-4 border-l-[var(--color-accent)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
       {renaming ? (
         <div className="flex gap-2">
           <input
@@ -354,22 +381,30 @@ function EntryHero({
           </button>
         </div>
       ) : (
-        <div className="flex items-baseline justify-between gap-2">
-          <b className="text-[1.05rem]">{entry.entryName}</b>
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-baseline gap-2 min-w-0">
+            <b className="text-[1.25rem] truncate">{entry.entryName}</b>
+            {standing ? (
+              <span className="shrink-0 text-[0.9rem] text-[var(--color-muted-foreground)] tabular-nums">
+                #{standing.rank} · {standing.totalPoints} pts
+              </span>
+            ) : null}
+          </span>
           <button
             onClick={onRenameStart}
-            className="min-h-[var(--tap-target-min)] px-2 font-bold text-[0.85rem] text-[var(--color-accent)]"
+            aria-label={`Rename ${entry.entryName}`}
+            className="shrink-0 min-h-[var(--tap-target-min)] px-2 font-bold text-[0.85rem] text-[var(--color-muted-foreground)]"
           >
-            Rename
+            &#9998; Rename
           </button>
         </div>
       )}
 
-      {!deadlinePassed ? (
+      {!deadlinePassed && data.published ? (
         // ── Picks open ──
         <>
           {entry.submittedAt && complete ? (
-            <p className="text-[1.05rem]">
+            <p className="text-[1.15rem]">
               <b className="text-[var(--color-accent)]">
                 &#10003; Locked in — {mine.length} of {need}
                 {data.pool.keyPick && hasKey ? (
@@ -378,7 +413,7 @@ function EntryHero({
               </b>
             </p>
           ) : (
-            <p className="text-[1.05rem] tabular-nums">
+            <p className="text-[1.15rem] tabular-nums">
               {mine.length === 0 ? (
                 <b className="text-[var(--color-pick-loss)]">No picks in yet</b>
               ) : (
@@ -389,29 +424,28 @@ function EntryHero({
               )}
             </p>
           )}
-          {data.deadline ? (
-            <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
-              Picks close <b>{kickoffLabel(data.deadline)}</b>
-            </p>
-          ) : null}
           <Link
             to={`/pool/${poolId}/picks`}
-            className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold"
+            className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold text-[1.05rem]"
           >
             {mine.length === 0
-              ? 'Make picks'
+              ? 'Make my picks'
               : entry.submittedAt && complete
                 ? 'View / change picks'
                 : 'Finish my picks'}
           </Link>
         </>
+      ) : !data.published ? (
+        <p className="text-[var(--color-muted-foreground)]">
+          The manager hasn&rsquo;t opened this week yet — you&rsquo;ll get an email when
+          picks are on.
+        </p>
       ) : (
         // ── Locked: live scores or results for MY games ──
         <>
           {anyAuto ? (
             <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
-              Some picks were filled by the app at the deadline — they&rsquo;re marked
-              below.
+              Some picks were filled by the app at the deadline — marked below.
             </p>
           ) : null}
           <div className="flex flex-col gap-2">
@@ -419,16 +453,14 @@ function EntryHero({
               <PickChip key={p.id} pick={p} game={gameById.get(p.gameId)} />
             ))}
             {mine.length === 0 ? (
-              <p className="text-[var(--color-muted-foreground)]">
-                No picks made this week.
-              </p>
+              <p className="text-[var(--color-muted-foreground)]">No picks made this week.</p>
             ) : null}
           </div>
           <Link
             to={`/pool/${poolId}/picks`}
             className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
           >
-            {anyLive ? 'Watch the week live' : allFinal ? 'See the full week' : 'See the week'}
+            {anyLive ? 'Watch the week live' : 'See the full week'}
           </Link>
         </>
       )}
@@ -441,8 +473,7 @@ function EntryHero({
 // alone — the state word is always printed.
 function PickChip({ pick, game }: { pick: ApiPick; game: ApiSlateGame | undefined }) {
   if (!game) return null
-  const myTeam =
-    pick.selectedTeamId === game.home?.id ? game.home : game.away
+  const myTeam = pick.selectedTeamId === game.home?.id ? game.home : game.away
   const oppTeam = pick.selectedTeamId === game.home?.id ? game.away : game.home
   const myScore = pick.selectedTeamId === game.home?.id ? game.homeScore : game.awayScore
   const oppScore = pick.selectedTeamId === game.home?.id ? game.awayScore : game.homeScore
