@@ -226,6 +226,12 @@ export function createApi(getToken: GetToken) {
         body: JSON.stringify({ entryId, week, picks }),
       }),
 
+    renameEntry: (poolId: string, entryId: string, entryName: string) =>
+      request<{ ok: true; entryName: string }>(getToken, `/api/pools/${poolId}/picks`, {
+        method: 'PATCH',
+        body: JSON.stringify({ entryId, entryName }),
+      }),
+
     getStandings: (poolId: string) =>
       request<StandingsResponse>(getToken, `/api/pools/${poolId}/standings`),
 

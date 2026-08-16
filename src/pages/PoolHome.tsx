@@ -25,6 +25,19 @@ export function PoolHome() {
     refetchInterval: 60_000,
   })
 
+  // Inline rename, one entry at a time.
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null)
+  const rename = useMutation({
+    mutationFn: ({ id, value }: { id: string; value: string }) =>
+      api.renameEntry(poolId, id, value),
+    onSuccess: (r) => {
+      toast.success(`Renamed to “${r.entryName}”`)
+      setRenaming(null)
+      qc.invalidateQueries({ queryKey: ['picks', poolId] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   // Explicit second-entry flow: open the name field, name it, add. The
   // ONLY way an extra entry comes to exist.
   const [addingName, setAddingName] = useState<string | null>(null)
@@ -100,7 +113,40 @@ export function PoolHome() {
             key={e.id}
             className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex flex-col gap-2"
           >
-            {data.entries.length > 1 ? <b>{e.entryName}</b> : null}
+            {renaming?.id === e.id ? (
+              <div className="flex gap-2">
+                <input
+                  value={renaming.value}
+                  onChange={(ev) => setRenaming({ id: e.id, value: ev.target.value })}
+                  maxLength={40}
+                  autoFocus
+                  className="flex-1 min-h-[var(--tap-target-min)] px-3 rounded-lg bg-[var(--color-muted)] border-2 border-[var(--color-border-interactive)]"
+                />
+                <button
+                  onClick={() => rename.mutate({ id: e.id, value: renaming.value.trim() })}
+                  disabled={!renaming.value.trim() || rename.isPending}
+                  className="min-h-[var(--tap-target-min)] px-4 rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-bold disabled:opacity-50"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => setRenaming(null)}
+                  className="min-h-[var(--tap-target-min)] px-3 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-baseline justify-between gap-2">
+                <b>{e.entryName}</b>
+                <button
+                  onClick={() => setRenaming({ id: e.id, value: e.entryName })}
+                  className="min-h-[var(--tap-target-min)] px-2 font-bold text-[0.85rem] text-[var(--color-accent)]"
+                >
+                  Rename
+                </button>
+              </div>
+            )}
             <p className="text-[1.05rem]">
               {e.submittedAt ? (
                 <b className="text-[var(--color-accent)]">

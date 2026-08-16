@@ -258,6 +258,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true, submittedAt: now.toISOString() })
   }
 
+  // ── Rename an entry ─────────────────────────────────────────────
+  // Owner-only, and the name stays unique in the pool. Names are the
+  // leaderboard's identity, so the row itself never changes — history,
+  // picks and points all ride along.
+  if (req.method === 'PATCH') {
+    const { entryId, entryName: newName } = (req.body ?? {}) as {
+      entryId?: string
+      entryName?: string
+    }
+    if (!entryId || !myEntryIds.includes(entryId)) {
+      return res.status(403).json({ error: 'That entry is not yours.' })
+    }
+    const wanted = newName?.trim()
+    if (!wanted) return res.status(400).json({ error: 'Give the entry a name.' })
+
+    const poolEntries = await db
+      .select({ id: nflPoolEntries.id, entryName: nflPoolEntries.entryName })
+      .from(nflPoolEntries)
+      .where(eq(nflPoolEntries.poolId, pool.id))
+    if (
+      poolEntries.some(
+        (t) => t.id !== entryId && t.entryName.toLowerCase() === wanted.toLowerCase()
+      )
+    ) {
+      return res.status(409).json({ error: `“${wanted}” is taken in this pool — pick another name.` })
+    }
+
+    await db
+      .update(nflPoolEntries)
+      .set({ entryName: wanted })
+      .where(eq(nflPoolEntries.id, entryId))
+    return res.status(200).json({ ok: true, entryName: wanted })
+  }
+
   if (req.method !== 'PUT') return res.status(405).json({ error: 'Method not allowed' })
 
   // ── Save ────────────────────────────────────────────────────────
