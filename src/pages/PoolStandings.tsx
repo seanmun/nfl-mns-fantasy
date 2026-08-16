@@ -81,12 +81,11 @@ export function PoolStandings() {
                   <td className="py-3 pr-2 font-bold">{r.rank}</td>
                   <td className="py-3 pr-3">
                     <b>{r.entryName}</b>
-                    {r.ownerEmail ? (
-                      // Manager-only — the API nulls it for members.
-                      <span className="block text-[0.8rem] text-[var(--color-muted-foreground)]">
-                        {r.ownerEmail}
-                      </span>
-                    ) : null}
+                    <span className="block text-[0.8rem] text-[var(--color-muted-foreground)]">
+                      {/* Username is public; email manager-only. */}
+                      {r.ownerName ?? ''}
+                      {r.ownerEmail ? ` · ${r.ownerEmail}` : ''}
+                    </span>
                     {r.isMine ? (
                       <span className="ml-2 text-[0.74rem] font-bold uppercase tracking-wider text-[var(--color-accent)]">
                         you

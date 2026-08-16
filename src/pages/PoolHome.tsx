@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { createApi } from '@/lib/api/client'
 import { kickoffLabel } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
@@ -16,11 +17,26 @@ export function PoolHome() {
   const api = useMemo(() => createApi(getToken), [getToken])
   const location = useLocation()
   const justSubmitted = (location.state as { justSubmitted?: boolean } | null)?.justSubmitted
+  const qc = useQueryClient()
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['picks', poolId, undefined],
     queryFn: () => api.getPicks(poolId),
     refetchInterval: 60_000,
+  })
+
+  // Explicit second-entry flow: open the name field, name it, add. The
+  // ONLY way an extra entry comes to exist.
+  const [addingName, setAddingName] = useState<string | null>(null)
+  const addEntry = useMutation({
+    mutationFn: (name: string) =>
+      api.joinPool({ poolId, addEntry: true, entryName: name }),
+    onSuccess: (r) => {
+      toast.success(`Added “${(addingName ?? '').trim()}” to ${r.pool.name}`)
+      setAddingName(null)
+      qc.invalidateQueries({ queryKey: ['picks', poolId] })
+    },
+    onError: (e: Error) => toast.error(e.message),
   })
 
   if (isLoading) {
@@ -115,6 +131,51 @@ export function PoolHome() {
           </div>
         )
       })}
+
+      {/* Second entries are explicit and named — never a side effect. */}
+      {data.pool.maxEntriesPerUser == null || data.entries.length < data.pool.maxEntriesPerUser ? (
+        addingName == null ? (
+          <button
+            onClick={() => setAddingName('')}
+            className="min-h-[var(--tap-target-min)] rounded-lg border-2 border-dashed border-[var(--color-border-interactive)] font-bold text-[var(--color-muted-foreground)]"
+          >
+            + Add another entry
+          </button>
+        ) : (
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
+            <label className="font-semibold" htmlFor="new-entry-name">
+              Name the new entry
+            </label>
+            <p className="text-[0.9rem] text-[var(--color-muted-foreground)] -mt-2">
+              It competes on its own — its own picks, its own leaderboard row. Your
+              username shows under it.
+            </p>
+            <input
+              id="new-entry-name"
+              value={addingName}
+              onChange={(e) => setAddingName(e.target.value)}
+              placeholder="e.g. My upset special"
+              maxLength={40}
+              className="min-h-[var(--tap-target-min)] px-4 rounded-lg bg-[var(--color-muted)] border-2 border-[var(--color-border-interactive)]"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => addEntry.mutate(addingName.trim())}
+                disabled={!addingName.trim() || addEntry.isPending}
+                className="flex-1 min-h-[var(--tap-target-min)] rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold disabled:opacity-50"
+              >
+                {addEntry.isPending ? 'Adding…' : 'Add entry'}
+              </button>
+              <button
+                onClick={() => setAddingName(null)}
+                className="min-h-[var(--tap-target-min)] px-5 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )
+      ) : null}
 
       <Link
         to={`/pool/${poolId}/standings`}

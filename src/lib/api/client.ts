@@ -44,6 +44,9 @@ export interface ApiPick {
 export interface ApiOtherPick {
   entryId: string
   entryName: string
+  // The owner's username — public, so shared ownership of several
+  // entries is visible to the whole pool.
+  ownerName: string | null
   // Present only when the caller manages the pool; members get null.
   ownerEmail: string | null
   gameId: string
@@ -66,6 +69,7 @@ export interface PicksResponse {
     managerNote: string | null
     startWeek: number
     endWeek: number
+    maxEntriesPerUser: number | null
   }
   manager: boolean
   week: { id: string; week: number; label: string }
@@ -160,6 +164,8 @@ export interface StandingsRow {
   rank: number
   entryId: string
   entryName: string
+  // The owner's username — public.
+  ownerName: string | null
   // Present only when the caller manages the pool; members get null.
   ownerEmail: string | null
   isMine: boolean
@@ -192,11 +198,21 @@ export function createApi(getToken: GetToken) {
     searchPools: (q: string) =>
       request<{ pools: PoolSummary[] }>(getToken, `/api/pools/join?q=${encodeURIComponent(q)}`),
 
-    joinPool: (body: { joinCode?: string; poolId?: string; inviteToken?: string; entryName?: string }) =>
-      request<{ pool: PoolSummary; entry: { id: string } }>(getToken, '/api/pools/join', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
+    joinPool: (body: {
+      joinCode?: string
+      poolId?: string
+      inviteToken?: string
+      entryName?: string
+      addEntry?: boolean
+    }) =>
+      request<{ pool: PoolSummary; entry: { id: string }; alreadyMember?: boolean }>(
+        getToken,
+        '/api/pools/join',
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }
+      ),
 
     getPicks: (poolId: string, week?: number) =>
       request<PicksResponse>(

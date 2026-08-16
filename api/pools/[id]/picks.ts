@@ -148,24 +148,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
     const nameById = new Map(allEntries.map((e) => [e.id, e.entryName]))
 
-    // Owner emails, MANAGER-ONLY — QA needs to tell same-named entries
-    // apart; members never see each other's addresses.
+    // Owner handles are PUBLIC (the pool sees shared ownership); emails
+    // stay MANAGER-ONLY.
+    const owners = allEntries.length
+      ? await db
+          .select({ id: users.id, email: users.email, displayName: users.displayName })
+          .from(users)
+          .where(inArray(users.id, [...new Set(allEntries.map((e) => e.userId))]))
+      : []
+    const ownerByUser = new Map(owners.map((o) => [o.id, o]))
+    const handleByEntry = new Map<string, string>()
     const emailByEntry = new Map<string, string>()
-    if (ctx.isPoolAdmin && allEntries.length) {
-      const owners = await db
-        .select({ id: users.id, email: users.email })
-        .from(users)
-        .where(inArray(users.id, [...new Set(allEntries.map((e) => e.userId))]))
-      const emailByUser = new Map(owners.map((o) => [o.id, o.email]))
-      for (const e of allEntries) {
-        const em = emailByUser.get(e.userId)
-        if (em) emailByEntry.set(e.id, em)
-      }
+    for (const e of allEntries) {
+      const o = ownerByUser.get(e.userId)
+      if (!o) continue
+      handleByEntry.set(e.id, o.displayName)
+      if (ctx.isPoolAdmin) emailByEntry.set(e.id, o.email)
     }
 
     others = rows.map((p) => ({
       entryId: p.entryId,
       entryName: nameById.get(p.entryId) ?? 'Entry',
+      ownerName: handleByEntry.get(p.entryId) ?? null,
       ownerEmail: emailByEntry.get(p.entryId) ?? null,
       gameId: p.gameId,
       selectedTeamId: p.selectedTeamId,
@@ -189,6 +193,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Week navigation bounds — the pool's own span, not the calendar's.
       startWeek: pool.startWeek,
       endWeek: pool.endWeek,
+      // Null means uncapped. The pool home uses it to decide whether
+      // "Add another entry" is on the table at all.
+      maxEntriesPerUser: pool.maxEntriesPerUser,
     },
     // Whether the CALLER runs this pool, not a fact about the pool.
     manager: ctx.isPoolAdmin,

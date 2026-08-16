@@ -34,15 +34,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from(nflPoolEntries)
     .where(eq(nflPoolEntries.poolId, poolId))
 
-  // Owner emails, MANAGER-ONLY. A member must never see another
-  // member's email; the manager needs it to tell three entries named
-  // alike apart.
+  // Owner handles are PUBLIC — shared ownership of several entries is
+  // something the whole pool is entitled to see. Emails stay
+  // MANAGER-ONLY; members never see each other's addresses.
+  const owners = entries.length
+    ? await db
+        .select({ id: users.id, email: users.email, displayName: users.displayName })
+        .from(users)
+        .where(inArray(users.id, [...new Set(entries.map((e) => e.userId))]))
+    : []
+  const nameByUser = new Map(owners.map((o) => [o.id, o.displayName]))
   const emailByUser = new Map<string, string>()
-  if (ctx.isPoolAdmin && entries.length) {
-    const owners = await db
-      .select({ id: users.id, email: users.email })
-      .from(users)
-      .where(inArray(users.id, [...new Set(entries.map((e) => e.userId))]))
+  if (ctx.isPoolAdmin) {
     for (const o of owners) emailByUser.set(o.id, o.email)
   }
 
@@ -91,6 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         rank: r.rank,
         entryId: r.entryId,
         entryName: entry.entryName,
+        ownerName: nameByUser.get(entry.userId) ?? null,
         ownerEmail: emailByUser.get(entry.userId) ?? null,
         isMine: ctx.entries.some((e) => e.id === r.entryId),
         totalPoints: r.totalPoints,

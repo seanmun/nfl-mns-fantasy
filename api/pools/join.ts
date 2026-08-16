@@ -45,7 +45,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { joinCode, inviteToken, poolId, entryName } = (req.body ?? {}) as Record<string, string>
+  const { joinCode, inviteToken, poolId, entryName, addEntry } = (req.body ?? {}) as {
+    joinCode?: string
+    inviteToken?: string
+    poolId?: string
+    entryName?: string
+    addEntry?: boolean
+  }
 
   try {
     let pool
@@ -100,17 +106,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // ── Caps ─────────────────────────────────────────────────────
+    // ── Membership ───────────────────────────────────────────────
     const mine = await db
       .select({ id: nflPoolEntries.id })
       .from(nflPoolEntries)
       .where(and(eq(nflPoolEntries.poolId, pool.id), eq(nflPoolEntries.userId, userId)))
 
+    // An entry is a season-long CONTESTANT, and it is created in exactly
+    // two deliberate moments: first join, or an explicit "add another
+    // entry". A member re-tapping an invite link, revisiting /join, or
+    // opening a new week must land in the pool they are already in — a
+    // silent second entry from any of those is how one person's picks
+    // split across two leaderboard rows.
+    if (mine.length > 0 && !addEntry) {
+      return res.status(200).json({ pool, entry: { id: mine[0].id }, alreadyMember: true })
+    }
+
+    // ── Caps ─────────────────────────────────────────────────────
     if (pool.maxEntriesPerUser != null && mine.length >= pool.maxEntriesPerUser) {
       return res.status(409).json({
         error:
           pool.maxEntriesPerUser === 1
-            ? 'You are already in this pool.'
+            ? 'This pool is one entry per person.'
             : `You already hold ${mine.length} entries, which is the limit here.`,
         entryId: mine[0]?.id,
       })
@@ -128,17 +145,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const handle = await ensureUser(userId)
 
+    // A second entry must be named by its owner; only entry #1 may fall
+    // back to the handle, and only because the join page prefills it.
+    const wanted = entryName?.trim() || (addEntry ? '' : handle)
+    if (!wanted) {
+      return res.status(400).json({ error: 'Give this entry a name.' })
+    }
+
+    // Unique within the pool, case-insensitive — two rows reading alike
+    // on a leaderboard is a coin-flip argument waiting to happen.
+    const taken = await db
+      .select({ id: nflPoolEntries.id, entryName: nflPoolEntries.entryName })
+      .from(nflPoolEntries)
+      .where(eq(nflPoolEntries.poolId, pool.id))
+    if (taken.some((t) => t.entryName.toLowerCase() === wanted.toLowerCase())) {
+      return res.status(409).json({ error: `“${wanted}” is taken in this pool — pick another name.` })
+    }
+
     const [entry] = await db
       .insert(nflPoolEntries)
-      .values({
-        poolId: pool.id,
-        userId,
-        // Default names stay distinguishable when one person holds
-        // several, since the leaderboard shows entries, not people.
-        // Defaults to the member's handle — "My entry" told a standings
-        // page nothing about who it was.
-        entryName: entryName?.trim() || (mine.length ? `${handle} ${mine.length + 1}` : handle),
-      })
+      .values({ poolId: pool.id, userId, entryName: wanted })
       .returning()
 
     if (invite) {

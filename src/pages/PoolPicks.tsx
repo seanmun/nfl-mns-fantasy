@@ -230,6 +230,14 @@ export function PoolPicks() {
         <Reveal others={data.others} slate={data.slate} />
       ) : null}
 
+      {/* The tick refreshes scores on this cadence; saying so stops
+          "why is my score stale" messages to the manager. */}
+      {data.slate.some((g) => g.status === 'in_progress') ? (
+        <p className="px-4 pt-4 text-[0.85rem] text-[var(--color-muted-foreground)]">
+          Scores update about every 15 minutes.
+        </p>
+      ) : null}
+
       <StatusBar
         have={have}
         need={need}
@@ -526,12 +534,12 @@ function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame
 
   const byEntry = new Map<
     string,
-    { id: string; name: string; email: string | null; picks: ApiOtherPick[] }
+    { id: string; name: string; owner: string | null; email: string | null; picks: ApiOtherPick[] }
   >()
   for (const p of others) {
     const e =
       byEntry.get(p.entryId) ??
-      { id: p.entryId, name: p.entryName, email: p.ownerEmail, picks: [] }
+      { id: p.entryId, name: p.entryName, owner: p.ownerName, email: p.ownerEmail, picks: [] }
     e.picks.push(p)
     byEntry.set(p.entryId, e)
   }
@@ -557,15 +565,12 @@ function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame
             className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3"
           >
             <b className="block">{e.name}</b>
-            {e.email ? (
-              // Manager-only (the API nulls it for members): which
-              // account owns this entry.
-              <span className="block mb-2 text-[0.8rem] text-[var(--color-muted-foreground)]">
-                {e.email}
-              </span>
-            ) : (
-              <span className="block mb-2" />
-            )}
+            <span className="block mb-2 text-[0.8rem] text-[var(--color-muted-foreground)]">
+              {/* Owner's username — public, so shared ownership shows.
+                  Email rides along for the manager only. */}
+              {e.owner ?? ''}
+              {e.email ? ` · ${e.email}` : ''}
+            </span>
             <div className="flex flex-wrap gap-2">
               {e.picks.map((p) => {
                 const b = badge(p.result)

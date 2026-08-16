@@ -11,7 +11,7 @@ import { createApi } from '@/lib/api/client'
 export function JoinPool() {
   const navigate = useNavigate()
   const { getToken } = useAuth()
-  const { isLoaded, isSignedIn } = useUser()
+  const { isLoaded, isSignedIn, user } = useUser()
   const api = useMemo(() => createApi(getToken), [getToken])
   const [params] = useSearchParams()
 
@@ -19,6 +19,13 @@ export function JoinPool() {
   const [code, setCode] = useState((params.get('code') ?? '').toUpperCase())
   const inviteToken = params.get('invite') ?? undefined
   const [query, setQuery] = useState('')
+
+  // Your name in this pool — the leaderboard row you'll be. Prefilled
+  // with the username so one tap still works, editable for flavour.
+  const [entryName, setEntryName] = useState('')
+  const handle =
+    user?.username ?? user?.primaryEmailAddress?.emailAddress?.split('@')[0] ?? ''
+  const chosenName = entryName.trim() || handle
 
   // A share link lands here signed OUT — usually someone brand new.
   // Joining needs an account, so the only honest first step is sign-up,
@@ -32,10 +39,12 @@ export function JoinPool() {
 
   const join = useMutation({
     mutationFn: (body: { joinCode?: string; poolId?: string; inviteToken?: string }) =>
-      api.joinPool(body),
+      api.joinPool({ ...body, entryName: chosenName }),
     onSuccess: (r) => {
-      toast.success(`Joined ${r.pool.name}`)
-      navigate(`/pool/${r.pool.id}/picks`)
+      // Tapping a link for a pool you're in is normal, not an error —
+      // it just takes you there.
+      toast.success(r.alreadyMember ? `You're already in ${r.pool.name}` : `Joined ${r.pool.name}`)
+      navigate(`/pool/${r.pool.id}`)
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -97,6 +106,22 @@ export function JoinPool() {
       {/* The forms only render signed in — signed out, every join call
           would 401, so the sign-up card above is the page. */}
       {isSignedIn ? (<>
+      <section className="flex flex-col gap-3">
+        <label className="font-semibold" htmlFor="entry-name">Name your entry</label>
+        <p className="text-[0.9rem] text-[var(--color-muted-foreground)] -mt-2">
+          How you&rsquo;ll appear on this pool&rsquo;s leaderboard. Your username shows
+          under it either way.
+        </p>
+        <input
+          id="entry-name"
+          value={entryName}
+          onChange={(e) => setEntryName(e.target.value)}
+          placeholder={handle || 'e.g. Gridiron Gary'}
+          maxLength={40}
+          className="min-h-[var(--tap-target-min)] px-4 rounded-lg bg-[var(--color-muted)] border-2 border-[var(--color-border-interactive)]"
+        />
+      </section>
+
       <section className="flex flex-col gap-3">
         <label className="font-semibold" htmlFor="code">Have a code?</label>
         <p className="text-[0.9rem] text-[var(--color-muted-foreground)] -mt-2">
