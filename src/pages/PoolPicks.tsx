@@ -42,6 +42,16 @@ export function PoolPicks() {
   const [draft, setDraft] = useState<Map<string, { teamId: string; isKey: boolean }> | null>(null)
   const picks = draft ?? serverPicks
 
+  // Post-lock the page becomes a viewer with two tabs: the games (with
+  // scores and pick counts) and the entries (everyone's picks, in
+  // standings order).
+  const [tab, setTab] = useState<'games' | 'entries'>('games')
+  const standings = useQuery({
+    queryKey: ['standings', poolId],
+    queryFn: () => api.getStandings(poolId),
+    enabled: data?.revealed === true,
+  })
+
   const mutation = useMutation({
     mutationFn: (value: SavePick[]) =>
       api.savePicks(poolId, activeEntry!, data!.week.week, value),
@@ -161,6 +171,17 @@ export function PoolPicks() {
     commit(next)
   }
 
+  // How many entries took each side — only meaningful (and only shown)
+  // once the reveal is open.
+  const countsByGame = new Map<string, Map<string, number>>()
+  if (data.revealed) {
+    for (const p of data.others) {
+      const g = countsByGame.get(p.gameId) ?? new Map<string, number>()
+      g.set(p.selectedTeamId, (g.get(p.selectedTeamId) ?? 0) + 1)
+      countsByGame.set(p.gameId, g)
+    }
+  }
+
   let lastDay = ''
 
   return (
@@ -189,20 +210,59 @@ export function PoolPicks() {
         </div>
       ) : null}
 
-      <p className="px-4 pt-6 pb-1 text-[1.05rem] font-bold">
-        {data.pool.poolType === 'survivor'
-          ? 'Pick one team.'
-          : need === data.slate.length
-            ? 'Pick a winner in every game.'
-            : `Pick ${need} games.`}
-      </p>
-      {wantsKey ? (
-        <p className="px-4 pb-2 text-[var(--color-muted-foreground)]">
-          Then choose one as your key pick.
-        </p>
+      {data.revealed ? (
+        // Locked week: viewing, not picking. Tabs replace instructions.
+        <div className="px-4 pt-5 flex gap-2" role="tablist" aria-label="Week views">
+          {(
+            [
+              ['games', 'Games'],
+              ['entries', 'Entries'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={
+                'flex-1 min-h-[var(--tap-target-min)] rounded-lg border-2 font-bold ' +
+                (tab === key
+                  ? 'bg-[var(--color-foreground)] text-[var(--color-background)] border-[var(--color-foreground)]'
+                  : 'border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]')
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <p className="px-4 pt-6 pb-1 text-[1.05rem] font-bold">
+            {data.pool.poolType === 'survivor'
+              ? 'Pick one team.'
+              : need === data.slate.length
+                ? 'Pick a winner in every game.'
+                : `Pick ${need} games.`}
+          </p>
+          {wantsKey ? (
+            <p className="px-4 pb-2 text-[var(--color-muted-foreground)]">
+              Then choose one as your key pick.
+            </p>
+          ) : null}
+        </>
+      )}
+
+      {data.revealed && tab === 'entries' ? (
+        <Reveal
+          others={data.others}
+          slate={data.slate}
+          rankByEntry={
+            new Map((standings.data?.rows ?? []).map((r) => [r.entryId, r.rank]))
+          }
+        />
       ) : null}
 
-      {data.slate.map((game) => {
+      {(!data.revealed || tab === 'games') && data.slate.map((game) => {
         const day = dayLabel(game.kickoffAt)
         const showDay = day !== lastDay
         lastDay = day
@@ -219,16 +279,13 @@ export function PoolPicks() {
               spreadMode={data.pool.spreadMode}
               wantsKey={wantsKey}
               atLimit={need != null && have >= need && !picks.has(game.gameId)}
+              counts={countsByGame.get(game.gameId) ?? null}
               onPick={(teamId) => toggleTeam(game, teamId)}
               onKey={() => setKey(game.gameId)}
             />
           </div>
         )
       })}
-
-      {data.revealed && data.others.length ? (
-        <Reveal others={data.others} slate={data.slate} />
-      ) : null}
 
       {/* The tick refreshes scores on this cadence; saying so stops
           "why is my score stale" messages to the manager. */}
@@ -238,24 +295,28 @@ export function PoolPicks() {
         </p>
       ) : null}
 
-      <StatusBar
-        have={have}
-        need={need}
-        wantsKey={wantsKey}
-        keyChosen={keyChosen}
-        state={autoSave.state}
-        error={autoSave.error}
-        onRetry={autoSave.retry}
-        submitted={
-          // A local draft means edits since load; the server clears the
-          // stamp on save, so treat any draft as not-submitted rather
-          // than showing a stale "Submitted" over changed picks.
-          draft == null && !!data.entries.find((e) => e.id === activeEntry)?.submittedAt
-        }
-        submitting={submit.isPending}
-        onSubmit={() => submit.mutate()}
-        submitError={submit.error ? (submit.error as Error).message : null}
-      />
+      {/* Once the week is locked there is nothing to save or submit —
+          the bar would only cover content. */}
+      {!data.revealed ? (
+        <StatusBar
+          have={have}
+          need={need}
+          wantsKey={wantsKey}
+          keyChosen={keyChosen}
+          state={autoSave.state}
+          error={autoSave.error}
+          onRetry={autoSave.retry}
+          submitted={
+            // A local draft means edits since load; the server clears the
+            // stamp on save, so treat any draft as not-submitted rather
+            // than showing a stale "Submitted" over changed picks.
+            draft == null && !!data.entries.find((e) => e.id === activeEntry)?.submittedAt
+          }
+          submitting={submit.isPending}
+          onSubmit={() => submit.mutate()}
+          submitError={submit.error ? (submit.error as Error).message : null}
+        />
+      ) : null}
     </div>
   )
 }
@@ -303,6 +364,7 @@ function GameCard({
   spreadMode,
   wantsKey,
   atLimit,
+  counts,
   onPick,
   onKey,
 }: {
@@ -311,6 +373,8 @@ function GameCard({
   spreadMode: 'straight_up' | 'ats'
   wantsKey: boolean
   atLimit: boolean
+  // Entries on each side, post-reveal only; null before the deadline.
+  counts: Map<string, number> | null
   onPick: (teamId: string) => void
   onKey: () => void
 }) {
@@ -357,6 +421,7 @@ function GameCard({
           spread={spreadMode === 'ats' ? teamSpread(game.spread, 'away') : null}
           selected={picked?.teamId === game.away?.id}
           disabled={!game.open || (atLimit && picked?.teamId !== game.away?.id)}
+          pickCount={counts && game.away ? counts.get(game.away.id) ?? 0 : null}
           onClick={() => game.away && onPick(game.away.id)}
         />
         <span className="self-center text-[0.8rem] font-bold text-[var(--color-muted-foreground)]">@</span>
@@ -365,6 +430,7 @@ function GameCard({
           spread={spreadMode === 'ats' ? teamSpread(game.spread, 'home') : null}
           selected={picked?.teamId === game.home?.id}
           disabled={!game.open || (atLimit && picked?.teamId !== game.home?.id)}
+          pickCount={counts && game.home ? counts.get(game.home.id) ?? 0 : null}
           onClick={() => game.home && onPick(game.home.id)}
         />
       </div>
@@ -394,12 +460,16 @@ function TeamButton({
   spread,
   selected,
   disabled,
+  pickCount,
   onClick,
 }: {
   team: ApiSlateGame['home']
   spread: string | null
   selected: boolean
   disabled: boolean
+  // Post-reveal: how many entries took this side. Null pre-deadline —
+  // showing the split while picks are open would tilt the picking.
+  pickCount: number | null
   onClick: () => void
 }) {
   if (!team) return <div />
@@ -430,6 +500,11 @@ function TeamButton({
           }
         >
           {spread}
+        </span>
+      ) : null}
+      {pickCount != null ? (
+        <span className="text-[0.78rem] text-[var(--color-muted-foreground)] tabular-nums">
+          {pickCount === 1 ? '1 entry picked' : `${pickCount} entries picked`}
         </span>
       ) : null}
       {selected ? (
@@ -525,7 +600,15 @@ function StatusBar({
 // The post-deadline reveal — everyone's picks, one row per entry. Only
 // rendered when the server says so; before the deadline `others` is
 // empty by design and this section simply is not there.
-function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame[] }) {
+function Reveal({
+  others,
+  slate,
+  rankByEntry,
+}: {
+  others: ApiOtherPick[]
+  slate: ApiSlateGame[]
+  rankByEntry: Map<string, number>
+}) {
   const nickById = new Map<string, string>()
   for (const g of slate) {
     if (g.home) nickById.set(g.home.id, g.home.nickname)
@@ -543,7 +626,13 @@ function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame
     e.picks.push(p)
     byEntry.set(p.entryId, e)
   }
-  const entries = [...byEntry.values()].sort((a, b) => a.name.localeCompare(b.name))
+  // Standings order — the leaderboard is the pool's one true ordering.
+  // Name order only breaks ties (and carries the pre-grading start).
+  const entries = [...byEntry.values()].sort((a, b) => {
+    const ra = rankByEntry.get(a.id) ?? Number.MAX_SAFE_INTEGER
+    const rb = rankByEntry.get(b.id) ?? Number.MAX_SAFE_INTEGER
+    return ra !== rb ? ra - rb : a.name.localeCompare(b.name)
+  })
 
   const badge = (r: ApiOtherPick['result']) =>
     r === 'win' ? ['W', 'var(--color-pick-win)'] :
@@ -564,7 +653,14 @@ function Reveal({ others, slate }: { others: ApiOtherPick[]; slate: ApiSlateGame
             key={e.id}
             className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3"
           >
-            <b className="block">{e.name}</b>
+            <b className="block">
+              {rankByEntry.has(e.id) ? (
+                <span className="mr-2 text-[var(--color-muted-foreground)] tabular-nums">
+                  {rankByEntry.get(e.id)}.
+                </span>
+              ) : null}
+              {e.name}
+            </b>
             <span className="block mb-2 text-[0.8rem] text-[var(--color-muted-foreground)]">
               {/* Owner's username — public, so shared ownership shows.
                   Email rides along for the manager only. */}
