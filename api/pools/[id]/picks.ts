@@ -163,7 +163,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const o = ownerByUser.get(e.userId)
       if (!o) continue
       handleByEntry.set(e.id, o.displayName)
-      if (ctx.isPoolAdmin) emailByEntry.set(e.id, o.email)
+      // Manager sees the full email ONLY while the owner has no real
+      // username (displayName == email local part is the fallback tell).
+      if (ctx.isPoolAdmin && o.displayName === o.email.split('@')[0]) {
+        emailByEntry.set(e.id, o.email)
+      }
     }
 
     others = rows.map((p) => ({

@@ -46,7 +46,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const nameByUser = new Map(owners.map((o) => [o.id, o.displayName]))
   const emailByUser = new Map<string, string>()
   if (ctx.isPoolAdmin) {
-    for (const o of owners) emailByUser.set(o.id, o.email)
+    for (const o of owners) {
+      // The full email backs up a missing username only. displayName
+      // equal to the email's local part IS the no-username fallback, so
+      // that's the tell; once a real username exists the email drops off.
+      if (o.displayName === o.email.split('@')[0]) emailByUser.set(o.id, o.email)
+    }
   }
 
   // Only weeks this pool actually runs, in order, with their labels —
