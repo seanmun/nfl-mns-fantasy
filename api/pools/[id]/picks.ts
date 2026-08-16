@@ -185,7 +185,92 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }))
   }
 
+  // ── Pool pulse ──────────────────────────────────────────────────
+  // "9 of 12 entries in" — counts only, so it leaks no picks before the
+  // reveal. An entry is "in" when it holds this week's full quota.
+  const needCount =
+    pool.poolType === 'survivor'
+      ? 1
+      : pool.picksRequired ?? config.picksRequired ?? slateRows.length
+  const allPoolEntries = await db
+    .select({ id: nflPoolEntries.id })
+    .from(nflPoolEntries)
+    .where(eq(nflPoolEntries.poolId, pool.id))
+  const weekPickRows = allPoolEntries.length
+    ? await db
+        .select({ entryId: nflPicks.entryId })
+        .from(nflPicks)
+        .where(
+          and(
+            inArray(nflPicks.entryId, allPoolEntries.map((e) => e.id)),
+            eq(nflPicks.weekId, week.id)
+          )
+        )
+    : []
+  const perEntry = new Map<string, number>()
+  for (const r of weekPickRows) perEntry.set(r.entryId, (perEntry.get(r.entryId) ?? 0) + 1)
+  const pulse = {
+    entriesTotal: allPoolEntries.length,
+    entriesComplete: [...perEntry.values()].filter((n) => n >= needCount).length,
+  }
+
+  // ── Last graded week, per caller entry ──────────────────────────
+  // The recap card: how each of my entries did, and where it moved.
+  const gradedRows = myEntryIds.length
+    ? await db
+        .select({
+          entryId: nflEntryWeeks.entryId,
+          weekId: nflEntryWeeks.weekId,
+          points: nflEntryWeeks.points,
+          correct: nflEntryWeeks.correctCount,
+          incorrect: nflEntryWeeks.incorrectCount,
+          push: nflEntryWeeks.pushCount,
+          weeklyRank: nflEntryWeeks.weeklyRank,
+          cumulativeRank: nflEntryWeeks.cumulativeRank,
+          gradedAt: nflEntryWeeks.gradedAt,
+        })
+        .from(nflEntryWeeks)
+        .where(inArray(nflEntryWeeks.entryId, myEntryIds))
+    : []
+  const weekNoById = new Map(
+    (
+      await db
+        .select({ id: nflWeeks.id, week: nflWeeks.week, label: nflWeeks.label })
+        .from(nflWeeks)
+        .where(
+          and(eq(nflWeeks.season, pool.season), eq(nflWeeks.seasonType, pool.seasonType))
+        )
+    ).map((w) => [w.id, w])
+  )
+  const recaps = myEntryIds.map((id) => {
+    const mine = gradedRows
+      .filter((r) => r.entryId === id && r.gradedAt != null)
+      .sort(
+        (a, b) => (weekNoById.get(b.weekId)?.week ?? 0) - (weekNoById.get(a.weekId)?.week ?? 0)
+      )
+    const latest = mine[0]
+    if (!latest) return null
+    const prior = mine[1]
+    return {
+      entryId: id,
+      weekLabel: weekNoById.get(latest.weekId)?.label ?? '',
+      points: latest.points,
+      correct: latest.correct,
+      incorrect: latest.incorrect,
+      push: latest.push,
+      weeklyRank: latest.weeklyRank,
+      rank: latest.cumulativeRank,
+      // Positive = climbed since the week before.
+      rankChange:
+        prior?.cumulativeRank != null && latest.cumulativeRank != null
+          ? prior.cumulativeRank - latest.cumulativeRank
+          : null,
+    }
+  }).filter(Boolean)
+
   const shape = {
+    pulse,
+    recaps,
     pool: {
       id: pool.id,
       name: pool.name,

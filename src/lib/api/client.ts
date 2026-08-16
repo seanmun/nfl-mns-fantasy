@@ -58,7 +58,24 @@ export interface ApiOtherPick {
   pointsEarned: number
 }
 
+export interface WeekRecap {
+  entryId: string
+  weekLabel: string
+  points: number
+  correct: number
+  incorrect: number
+  push: number
+  weeklyRank: number | null
+  rank: number | null
+  // Positive = climbed since the week before; null when unknowable.
+  rankChange: number | null
+}
+
 export interface PicksResponse {
+  // Counts only — safe before the reveal.
+  pulse: { entriesTotal: number; entriesComplete: number }
+  // Last graded week per caller entry; empty until something grades.
+  recaps: WeekRecap[]
   pool: {
     id: string
     name: string
