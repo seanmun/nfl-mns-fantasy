@@ -79,12 +79,13 @@ export async function autofillPoolWeek(
 
   // Only games this pool actually included, joined to their kickoff so
   // ones already under way can be excluded.
-  const slate = await db
+  const slateAll = await db
     .select({
       gameId: nflPoolGames.gameId,
       homeTeamId: nflGames.homeTeamId,
       awayTeamId: nflGames.awayTeamId,
       kickoffAt: nflGames.kickoffAt,
+      spread: nflPoolGames.spread,
     })
     .from(nflPoolGames)
     .innerJoin(nflGames, eq(nflGames.id, nflPoolGames.gameId))
@@ -95,11 +96,17 @@ export async function autofillPoolWeek(
         eq(nflPoolGames.isIncluded, true)
       )
     )
+  // An OFF-THE-BOARD game (published ATS slate, no number) is not
+  // pickable by a person, so the fill never assigns it either.
+  const slate =
+    pool.spreadMode === 'ats' ? slateAll.filter((g) => g.spread != null) : slateAll
 
+  // ACTIVE entries only — a benched season or a ban is not something
+  // the deadline job should be inventing picks for.
   const entries = await db
     .select()
     .from(nflPoolEntries)
-    .where(eq(nflPoolEntries.poolId, pool.id))
+    .where(and(eq(nflPoolEntries.poolId, pool.id), eq(nflPoolEntries.status, 'active')))
 
   for (const entry of entries) {
     // Survivor entries that are already out are left alone.

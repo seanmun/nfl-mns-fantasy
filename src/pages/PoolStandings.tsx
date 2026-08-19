@@ -76,6 +76,18 @@ export function PoolStandings() {
     refetchInterval: 60_000,
   })
 
+  const setStatus = useMutation({
+    mutationFn: ({ entryId, status }: { entryId: string; status: 'active' | 'benched' | 'banned' }) =>
+      api.setEntryStatus(poolId, entryId, status),
+    onSuccess: (_r, v) => {
+      toast.success(
+        v.status === 'active' ? 'Back in the pool' : v.status === 'benched' ? 'Benched' : 'Banned'
+      )
+      qc.invalidateQueries({ queryKey: ['standings', poolId] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   const setAdmin = useMutation({
     mutationFn: ({ entryId, isAdmin }: { entryId: string; isAdmin: boolean }) =>
       api.setPoolAdmin(poolId, entryId, isAdmin),
@@ -257,16 +269,42 @@ export function PoolStandings() {
                       {r.ownerName ?? ''}
                       {r.ownerEmail ? ` · ${r.ownerEmail}` : ''}
                     </span>
-                    {r.canToggleAdmin ? (
-                      <button
-                        onClick={() =>
-                          setAdmin.mutate({ entryId: r.entryId, isAdmin: !r.ownerIsAdmin })
-                        }
-                        disabled={setAdmin.isPending}
-                        className="mt-1 min-h-[2rem] px-2 rounded border-2 border-[var(--color-border-interactive)] text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
-                      >
-                        {r.ownerIsAdmin ? 'Remove admin' : 'Make admin'}
-                      </button>
+                    {r.canToggleAdmin || r.canModerate ? (
+                      <span className="flex flex-wrap gap-1 mt-1">
+                        {r.canToggleAdmin ? (
+                          <button
+                            onClick={() =>
+                              setAdmin.mutate({ entryId: r.entryId, isAdmin: !r.ownerIsAdmin })
+                            }
+                            disabled={setAdmin.isPending}
+                            className="min-h-[2rem] px-2 rounded border-2 border-[var(--color-border-interactive)] text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
+                          >
+                            {r.ownerIsAdmin ? 'Remove admin' : 'Make admin'}
+                          </button>
+                        ) : null}
+                        {r.canModerate ? (
+                          <>
+                            <button
+                              onClick={() =>
+                                setStatus.mutate({ entryId: r.entryId, status: 'benched' })
+                              }
+                              disabled={setStatus.isPending}
+                              className="min-h-[2rem] px-2 rounded border-2 border-[var(--color-border-interactive)] text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
+                            >
+                              Bench
+                            </button>
+                            <button
+                              onClick={() =>
+                                setStatus.mutate({ entryId: r.entryId, status: 'banned' })
+                              }
+                              disabled={setStatus.isPending}
+                              className="min-h-[2rem] px-2 rounded border-2 border-[var(--color-pick-loss)] text-[0.78rem] font-bold text-[var(--color-pick-loss)]"
+                            >
+                              Ban
+                            </button>
+                          </>
+                        ) : null}
+                      </span>
                     ) : null}
                     {r.isMine ? (
                       <span className="ml-2 text-[0.74rem] font-bold uppercase tracking-wider text-[var(--color-accent)]">
@@ -290,6 +328,48 @@ export function PoolStandings() {
           </tbody>
         </table>
       </div>
+
+      {data.inactive.length ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-muted-foreground)]">
+            Benched &amp; banned
+          </h2>
+          <ul className="flex flex-col gap-1">
+            {data.inactive.map((e) => (
+              <li
+                key={e.entryId}
+                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg bg-[var(--color-card)] border border-[var(--color-border)] px-3 py-2"
+              >
+                <span className="truncate">
+                  <b>{e.entryName}</b>
+                  <span className="text-[0.8rem] text-[var(--color-muted-foreground)]">
+                    {' '}
+                    · {e.ownerName ?? ''}
+                    {e.ownerEmail ? ` · ${e.ownerEmail}` : ''}
+                  </span>
+                  <span
+                    className={
+                      'ml-2 text-[0.7rem] font-bold uppercase tracking-wider ' +
+                      (e.status === 'banned'
+                        ? 'text-[var(--color-pick-loss)]'
+                        : 'text-[var(--color-pick-push)]')
+                    }
+                  >
+                    {e.status}
+                  </span>
+                </span>
+                <button
+                  onClick={() => setStatus.mutate({ entryId: e.entryId, status: 'active' })}
+                  disabled={setStatus.isPending}
+                  className="min-h-[2rem] px-2 rounded border-2 border-[var(--color-border-interactive)] text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
+                >
+                  Reactivate
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <p className="text-[0.85rem] text-[var(--color-muted-foreground)]">
         Ties break on the key ★ column. A key pick scores no extra points during the

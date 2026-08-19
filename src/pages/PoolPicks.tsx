@@ -407,7 +407,11 @@ function GameCard({
         ) : (
           <span>{game.kickoffTbd ? 'Time to be announced' : kickoffLabel(game.kickoffAt)}</span>
         )}
-        {!game.open ? (
+        {game.offBoard ? (
+          <span className="font-bold uppercase tracking-wider text-[0.72rem] text-[var(--color-key)]">
+            Off the board
+          </span>
+        ) : !game.open ? (
           // Never colour alone — a padlock and the word, per WCAG 1.4.1.
           <span className="font-bold uppercase tracking-wider text-[0.72rem] text-[var(--color-locked)]">
             &#128274; Locked
@@ -415,25 +419,40 @@ function GameCard({
         ) : null}
       </div>
 
-      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 p-2.5">
-        <TeamButton
-          team={game.away}
-          spread={spreadMode === 'ats' ? teamSpread(game.spread, 'away') : null}
-          selected={picked?.teamId === game.away?.id}
-          disabled={!game.open || (atLimit && picked?.teamId !== game.away?.id)}
-          pickCount={counts && game.away ? counts.get(game.away.id) ?? 0 : null}
-          onClick={() => game.away && onPick(game.away.id)}
-        />
-        <span className="self-center text-[0.8rem] font-bold text-[var(--color-muted-foreground)]">@</span>
-        <TeamButton
-          team={game.home}
-          spread={spreadMode === 'ats' ? teamSpread(game.spread, 'home') : null}
-          selected={picked?.teamId === game.home?.id}
-          disabled={!game.open || (atLimit && picked?.teamId !== game.home?.id)}
-          pickCount={counts && game.home ? counts.get(game.home.id) ?? 0 : null}
-          onClick={() => game.home && onPick(game.home.id)}
-        />
-      </div>
+      {(() => {
+        // FAVORITE on the left, underdog on the right, home carried by
+        // the connector: "Giants at Eagles +3" = Eagles home AND dog.
+        // Straight-up pools (and pick 'em lines) stay away-at-home.
+        const homeFav = spreadMode === 'ats' && game.spread != null && game.spread < 0
+        const left = homeFav ? game.home : game.away
+        const right = homeFav ? game.away : game.home
+        const leftSide: 'home' | 'away' = homeFav ? 'home' : 'away'
+        const rightSide: 'home' | 'away' = homeFav ? 'away' : 'home'
+        // Right side is home → the left team travels: "at". Otherwise
+        // the favorite hosts: "vs".
+        const connector = rightSide === 'home' ? 'at' : 'vs'
+        const btn = (team: typeof left, side: 'home' | 'away') => (
+          <TeamButton
+            team={team}
+            spread={
+              spreadMode === 'ats' && !game.offBoard ? teamSpread(game.spread, side) : null
+            }
+            selected={picked?.teamId === team?.id}
+            disabled={!game.open || (atLimit && picked?.teamId !== team?.id)}
+            pickCount={counts && team ? counts.get(team.id) ?? 0 : null}
+            onClick={() => team && onPick(team.id)}
+          />
+        )
+        return (
+          <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 p-2.5">
+            {btn(left, leftSide)}
+            <span className="self-center text-[0.8rem] font-bold text-[var(--color-muted-foreground)]">
+              {connector}
+            </span>
+            {btn(right, rightSide)}
+          </div>
+        )
+      })()}
 
       {wantsKey && picked ? (
         <div className="border-t border-[var(--color-border)] p-2.5">
@@ -661,11 +680,43 @@ function Reveal({
               ) : null}
               {e.name}
             </b>
-            <span className="block mb-2 text-[0.8rem] text-[var(--color-muted-foreground)]">
+            <span className="block text-[0.8rem] text-[var(--color-muted-foreground)]">
               {/* Owner's username — public, so shared ownership shows.
                   Email rides along for the manager only. */}
               {e.owner ?? ''}
               {e.email ? ` · ${e.email}` : ''}
+            </span>
+            {/* One dot per pick: won, lost, pushed, or still to play —
+                the week at a glance before reading a single chip. The
+                key pick wears a ring. Colour never stands alone; the
+                chips below carry the letters. */}
+            <span className="flex items-center gap-1.5 mb-2 mt-1" aria-hidden="true">
+              {e.picks.map((p) => {
+                const fill =
+                  p.result === 'win'
+                    ? 'var(--color-pick-win)'
+                    : p.result === 'loss'
+                      ? 'var(--color-pick-loss)'
+                      : p.result === 'push'
+                        ? 'var(--color-pick-push)'
+                        : 'var(--color-border-interactive)'
+                return (
+                  <span
+                    key={p.gameId}
+                    className="inline-block rounded-full"
+                    style={{
+                      width: '0.65rem',
+                      height: '0.65rem',
+                      background: fill,
+                      boxShadow: p.isKeyPick ? `0 0 0 2px var(--color-card), 0 0 0 4px ${fill}` : undefined,
+                    }}
+                  />
+                )
+              })}
+              <span className="ml-1 text-[0.78rem] text-[var(--color-muted-foreground)] tabular-nums">
+                {e.picks.reduce((n, p) => n + p.pointsEarned, 0)} pts ·{' '}
+                {e.picks.filter((p) => p.result === 'pending').length} to play
+              </span>
             </span>
             <div className="flex flex-wrap gap-2">
               {e.picks.map((p) => {

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { and, eq, ilike } from 'drizzle-orm'
+import { and, asc, eq, ilike, isNotNull } from 'drizzle-orm'
 import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import { ensureUser } from '../_ensureUser.js'
@@ -8,7 +8,7 @@ import {
   nflPoolEntries,
   nflPoolInvites,
   nflPools,
-  nflWeeks,
+  nflPoolWeeks,
 } from '../../src/lib/db/schema.js'
 
 // GET  /api/pools/join?q=      — search public pools
@@ -95,22 +95,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // ── Late join ────────────────────────────────────────────────
+    // Entries stay open until the FIRST PICK LOCK — the earliest pick
+    // deadline the pool has committed to — not the first kickoff. A
+    // pool with nothing published yet is always open.
     if (!pool.allowLateJoin) {
-      const [firstWeek] = await db
-        .select({ first: nflWeeks.firstKickoffAt })
-        .from(nflWeeks)
-        .where(and(eq(nflWeeks.season, pool.season), eq(nflWeeks.week, pool.startWeek)))
+      const [firstDeadline] = await db
+        .select({ deadline: nflPoolWeeks.pickDeadlineAt })
+        .from(nflPoolWeeks)
+        .where(and(eq(nflPoolWeeks.poolId, pool.id), isNotNull(nflPoolWeeks.pickDeadlineAt)))
+        .orderBy(asc(nflPoolWeeks.pickDeadlineAt))
         .limit(1)
-      if (firstWeek?.first && new Date() >= firstWeek.first) {
+      if (firstDeadline?.deadline && new Date() >= firstDeadline.deadline) {
         return res.status(403).json({ error: 'This pool has already started and is closed to new entries.' })
       }
     }
 
     // ── Membership ───────────────────────────────────────────────
     const mine = await db
-      .select({ id: nflPoolEntries.id })
+      .select({ id: nflPoolEntries.id, status: nflPoolEntries.status })
       .from(nflPoolEntries)
       .where(and(eq(nflPoolEntries.poolId, pool.id), eq(nflPoolEntries.userId, userId)))
+
+    // A ban is a ban — no rejoining, no fresh entry alongside it.
+    if (mine.some((e) => e.status === 'banned')) {
+      return res.status(403).json({ error: 'You have been removed from this pool by the manager.' })
+    }
 
     // An entry is a season-long CONTESTANT, and it is created in exactly
     // two deliberate moments: first join, or an explicit "add another

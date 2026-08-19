@@ -37,6 +37,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // admin quietly stops meaning anything.
   const canManageAdmins = ctx.pool.createdBy === ctx.userId || isSiteAdmin(ctx.userId)
 
+  // ── Bench / ban / reactivate an entry ───────────────────────────
+  // POST { entryId, status } — any pool admin. Benched entries sit the
+  // season out but stay for next year; banned are gone and cannot
+  // rejoin. Per ENTRY, not per user: someone's serious entry can stay
+  // active while a joke entry is benched.
+  if (req.method === 'POST' && typeof req.body?.status === 'string') {
+    if (!ctx.isPoolAdmin) {
+      return res.status(403).json({ error: 'Only pool admins can do that.' })
+    }
+    const { entryId, status } = req.body as { entryId?: string; status?: string }
+    if (!entryId || !['active', 'benched', 'banned'].includes(status ?? '')) {
+      return res.status(400).json({ error: 'Say which entry, and active, benched or banned.' })
+    }
+    const [target] = await db
+      .select({ userId: nflPoolEntries.userId })
+      .from(nflPoolEntries)
+      .where(and(eq(nflPoolEntries.id, entryId), eq(nflPoolEntries.poolId, poolId)))
+      .limit(1)
+    if (!target) return res.status(404).json({ error: 'That entry is not in this pool.' })
+    if (target.userId === ctx.pool.createdBy) {
+      return res.status(400).json({ error: 'The creator cannot be benched or banned.' })
+    }
+    await db
+      .update(nflPoolEntries)
+      .set({ status: status as 'active' | 'benched' | 'banned' })
+      .where(eq(nflPoolEntries.id, entryId))
+    return res.status(200).json({ ok: true })
+  }
+
   // ── Grant / revoke co-admin ─────────────────────────────────────
   // POST { entryId, isAdmin } — creator only. Writes every entry of
   // the target USER so admin-ness never depends on which entry you
@@ -70,19 +99,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const entries = await db
+  const allEntries = await db
     .select()
     .from(nflPoolEntries)
     .where(eq(nflPoolEntries.poolId, poolId))
+  // Only ACTIVE entries compete. Benched and banned vanish from every
+  // ranking and count; admins get them in a separate list below.
+  const entries = allEntries.filter((e) => e.status === 'active')
 
   // Owner handles are PUBLIC — shared ownership of several entries is
   // something the whole pool is entitled to see. Emails stay
   // MANAGER-ONLY; members never see each other's addresses.
-  const owners = entries.length
+  const owners = allEntries.length
     ? await db
         .select({ id: users.id, email: users.email, displayName: users.displayName })
         .from(users)
-        .where(inArray(users.id, [...new Set(entries.map((e) => e.userId))]))
+        .where(inArray(users.id, [...new Set(allEntries.map((e) => e.userId))]))
     : []
   const nameByUser = new Map(owners.map((o) => [o.id, o.displayName]))
   // Pool admins see every owner's email on the standings — it is their
@@ -274,9 +306,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // Benched and banned, admins only — the roster's back room.
+  const inactive = ctx.isPoolAdmin
+    ? allEntries
+        .filter((e) => e.status !== 'active')
+        .map((e) => ({
+          entryId: e.id,
+          entryName: e.entryName,
+          status: e.status,
+          ownerName: nameByUser.get(e.userId) ?? null,
+          ownerEmail: emailByUser.get(e.userId) ?? null,
+        }))
+    : []
+
   return res.status(200).json({
     final: seasonOver,
     winners,
+    inactive,
     weeks: weeksSorted.map((w) => ({ week: w.week, label: w.label })),
     rows: ranked.map((r) => {
       const entry = byEntry.get(r.entryId)!
@@ -296,6 +342,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Creator-only, never on the creator's rows, never on your own.
         canToggleAdmin:
           canManageAdmins &&
+          entry.userId !== ctx.pool.createdBy &&
+          entry.userId !== ctx.userId,
+        // Any admin can bench/ban any non-creator entry but their own.
+        canModerate:
+          ctx.isPoolAdmin &&
           entry.userId !== ctx.pool.createdBy &&
           entry.userId !== ctx.userId,
         totalPoints: r.totalPoints,

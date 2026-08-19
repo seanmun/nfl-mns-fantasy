@@ -5,11 +5,15 @@ import { applyCors, loadCtx, requirePoolAdmin } from '../../_pool.js'
 import {
   nflGameLines,
   nflGames,
+  nflPoolEntries,
+  nflPoolAnnouncements,
   nflPoolGames,
   nflPoolWeeks,
   nflTeams,
   nflWeeks,
+  users,
 } from '../../../src/lib/db/schema.js'
+import { esc, sendAll, type Message } from '../../_email.js'
 import { computeDeadline, isTbdKickoff } from '../../../src/lib/scoring/deadline.js'
 import { currentWeek } from '../../../src/lib/sync/schedule.js'
 
@@ -121,18 +125,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const game = gameById.get(row.gameId)
       if (!game) continue
 
-      // After publish, a number may still be corrected right up to that
-      // game's own kickoff, and never after. Members have already picked
-      // against it, so a change once it is under way would regrade a
-      // result that is partly known.
-      if (published && !isTbdKickoff(game.kickoffAt) && now >= game.kickoffAt) {
+      // Publishing LOCKS the lines. After it, exactly one edit exists:
+      // giving a number to a game that went out OFF THE BOARD (null
+      // spread) — and only before that game kicks off. A published
+      // number never moves and the slate never changes; members have
+      // already picked against both.
+      if (published) {
         const prior = existingByGame.get(row.gameId)
-        if (prior && (prior.spread !== row.spread || prior.isIncluded !== row.isIncluded)) {
+        if (!prior) continue
+        if (prior.isIncluded !== row.isIncluded) {
           return res.status(409).json({
-            error: 'That game has already started — its line and slate cannot change now.',
+            error: 'The slate is locked once the week is published.',
           })
         }
-        continue
+        if (prior.spread != null && row.spread !== prior.spread) {
+          return res.status(409).json({
+            error: 'Published lines are locked. Only off-the-board games can still get a number.',
+          })
+        }
+        if (
+          prior.spread == null &&
+          row.spread != null &&
+          !isTbdKickoff(game.kickoffAt) &&
+          now >= game.kickoffAt
+        ) {
+          return res.status(409).json({
+            error: 'That game has already started — it stays off the board.',
+          })
+        }
       }
 
       await db
@@ -156,8 +176,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── Publish ─────────────────────────────────────────────────────
+  // Publishing locks whatever numbers were entered and emails every
+  // ACTIVE member the lines, with the admin's note on top when there is
+  // one. A blank ATS spread is deliberate: that game goes out OFF THE
+  // BOARD — unpickable — and a later fill-in triggers this same path,
+  // another lock, another email. pool_announcements logs each blast.
   if (req.method === 'POST') {
-    const { pickDeadlineAt } = (req.body ?? {}) as { pickDeadlineAt?: string }
+    const { pickDeadlineAt, message } = (req.body ?? {}) as {
+      pickDeadlineAt?: string
+      message?: string
+    }
 
     const rows = await db
       .select()
@@ -169,32 +197,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Include at least one game before publishing.' })
     }
 
-    // An ATS game with no number cannot be graded, and discovering that
-    // after the fact is unrecoverable. Blocked here rather than at
-    // grading time.
-    if (pool.spreadMode === 'ats') {
-      const gameById = new Map(games.map((g) => [g.id, g]))
-      const missingSpread = included.filter((r) => r.spread == null)
-      if (missingSpread.length > 0) {
-        const names = missingSpread
-          .map((r) => {
-            const g = gameById.get(r.gameId)
-            return g ? `${g.awayTeamId}@${g.homeTeamId}` : r.gameId
-          })
-          .join(', ')
-        return res.status(400).json({
-          error: `These games still need a spread before you can publish: ${names}`,
-        })
-      }
-    }
+    const republish = ensuredPoolWeek.linesPublishedAt != null
 
     const kickoffs = included
       .map((r) => games.find((g) => g.id === r.gameId)?.kickoffAt)
       .filter((d): d is Date => !!d)
 
-    const deadline = pickDeadlineAt
-      ? new Date(pickDeadlineAt)
-      : computeDeadline(pool.deadlineAnchor, pool.deadlineOffsetMinutes, kickoffs)
+    // The deadline is FROZEN at first publish. A re-publish only fills
+    // off-the-board lines; moving the cutoff under members who planned
+    // around it is not on the table.
+    const deadline = republish
+      ? ensuredPoolWeek.pickDeadlineAt
+      : pickDeadlineAt
+        ? new Date(pickDeadlineAt)
+        : computeDeadline(pool.deadlineAnchor, pool.deadlineOffsetMinutes, kickoffs)
 
     if (!deadline) {
       return res.status(400).json({
@@ -206,14 +222,100 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await db
       .update(nflPoolWeeks)
       .set({
-        linesPublishedAt: new Date(),
+        linesPublishedAt: ensuredPoolWeek.linesPublishedAt ?? new Date(),
         linesPublishedBy: ctx.userId,
         pickDeadlineAt: deadline,
         updatedAt: new Date(),
       })
       .where(eq(nflPoolWeeks.id, ensuredPoolWeek.id))
 
-    return res.status(200).json({ ok: true, pickDeadlineAt: deadline })
+    // ── The lines email ─────────────────────────────────────────
+    const teams = await db.select().from(nflTeams)
+    const nick = new Map(teams.map((t) => [t.id, t.nickname]))
+    const gameById = new Map(games.map((g) => [g.id, g]))
+
+    // Favorite on the left, underdog's points on the right, home side
+    // carried by the connector: "Giants at Eagles +3" = Eagles home AND
+    // underdog. Blank line = off the board.
+    const lineText = (r: (typeof included)[number]): string => {
+      const g = gameById.get(r.gameId)
+      if (!g) return ''
+      const home = nick.get(g.homeTeamId) ?? g.homeTeamId
+      const away = nick.get(g.awayTeamId) ?? g.awayTeamId
+      if (pool.spreadMode !== 'ats') return `${away} at ${home}`
+      if (r.spread == null) return `${away} at ${home} — OFF THE BOARD`
+      if (r.spread === 0) return `${away} at ${home} (pick 'em)`
+      // spread is home-perspective: negative = home favoured.
+      return r.spread < 0
+        ? `${home} vs ${away} +${Math.abs(r.spread)}`
+        : `${away} at ${home} +${r.spread}`
+    }
+    const linesList = included
+      .slice()
+      .sort((a, b) => {
+        const ka = gameById.get(a.gameId)?.kickoffAt.getTime() ?? 0
+        const kb = gameById.get(b.gameId)?.kickoffAt.getTime() ?? 0
+        return ka - kb
+      })
+      .map(lineText)
+      .filter(Boolean)
+
+    const activeEntries = await db
+      .select({ userId: nflPoolEntries.userId })
+      .from(nflPoolEntries)
+      .where(and(eq(nflPoolEntries.poolId, pool.id), eq(nflPoolEntries.status, 'active')))
+    const owners = activeEntries.length
+      ? await db
+          .select({ id: users.id, email: users.email })
+          .from(users)
+          .where(inArray(users.id, [...new Set(activeEntries.map((e) => e.userId))]))
+      : []
+
+    const note = (message ?? '').trim()
+    const subject = republish
+      ? `${week.label} lines updated`
+      : `${week.label} lines are out — picks are open`
+    const textBody = [
+      note,
+      note ? '' : null,
+      `${week.label} lines:`,
+      ...linesList.map((l) => `  ${l}`),
+      '',
+      `Picks close ${deadline.toLocaleString('en-US', { timeZone: 'America/New_York' })} ET.`,
+      `Make your picks: ${process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'}/pool/${pool.id}/picks`,
+    ]
+      .filter((x): x is string => x != null)
+      .join('\n')
+    const htmlBody = `${note ? `<p>${esc(note).replace(/\n/g, '<br />')}</p>` : ''}
+<p><b>${esc(week.label)} lines:</b></p>
+<p>${linesList.map((l) => esc(l)).join('<br />')}</p>
+<p>Picks close ${esc(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }))} ET.</p>
+<p><a href="${process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'}/pool/${pool.id}/picks">Make your picks</a></p>`
+
+    const messages: Message[] = owners
+      .filter((o) => !!o.email)
+      .map((o) => ({
+        to: o.email,
+        subject: `[${pool.name}] ${subject}`,
+        html: htmlBody,
+        text: textBody,
+      }))
+    const sent = await sendAll(messages)
+
+    await db.insert(nflPoolAnnouncements).values({
+      poolId: pool.id,
+      weekId: week.id,
+      subject,
+      bodyMarkdown: note || `(lines only)`,
+      includedLines: true,
+      sentBy: ctx.userId,
+      recipientCount: sent.sent,
+      failedCount: sent.failed.length,
+    })
+
+    return res
+      .status(200)
+      .json({ ok: true, pickDeadlineAt: deadline, emailed: sent.sent, emailFailed: sent.failed.length })
   }
 
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
@@ -243,6 +345,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // The market number, for comparison. Never what grading reads.
       marketSpread: lineByGame.get(g.id)?.spread ?? null,
       started: !isTbdKickoff(g.kickoffAt) && now >= g.kickoffAt,
+      // Published + numbered = locked. Published + null = off the board,
+      // still fillable until kickoff.
+      locked: ensuredPoolWeek.linesPublishedAt != null && (row?.spread ?? null) != null,
     }
   })
 

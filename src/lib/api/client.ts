@@ -21,6 +21,9 @@ export interface ApiSlateGame {
   spread: number | null
   home: ApiTeam | null
   away: ApiTeam | null
+  // Published ATS game with no number: visible, never pickable, may
+  // come back on the board if the admin fills the line in later.
+  offBoard: boolean
   // Computed server-side through isPickable, so the client never has to
   // reimplement the two-cutoff rule and get it subtly different.
   open: boolean
@@ -94,7 +97,12 @@ export interface PicksResponse {
   deadline: string | null
   revealed: boolean
   slate: ApiSlateGame[]
-  entries: Array<{ id: string; entryName: string; submittedAt: string | null }>
+  entries: Array<{
+    id: string
+    entryName: string
+    status: 'active' | 'benched' | 'banned'
+    submittedAt: string | null
+  }>
   myPicks: ApiPick[]
   others: ApiOtherPick[]
 }
@@ -200,6 +208,8 @@ export interface StandingsRow {
   ownerIsAdmin: boolean
   // True when the CALLER may grant/revoke admin on this row.
   canToggleAdmin: boolean
+  // True when the CALLER may bench/ban this row.
+  canModerate: boolean
   weekly: StandingsWeekCell[]
 }
 
@@ -234,6 +244,14 @@ export interface StandingsResponse {
   final: boolean
   // Null when the pool has no prize config.
   winners: WinnersCircle | null
+  // Benched and banned entries — admins only, empty for members.
+  inactive: Array<{
+    entryId: string
+    entryName: string
+    status: 'benched' | 'banned'
+    ownerName: string | null
+    ownerEmail: string | null
+  }>
   weeks: Array<{ week: number; label: string }>
   rows: StandingsRow[]
 }
@@ -333,6 +351,12 @@ export function createApi(getToken: GetToken) {
           body: JSON.stringify({ action: 'announce', subject, body }),
         }
       ),
+
+    setEntryStatus: (poolId: string, entryId: string, status: 'active' | 'benched' | 'banned') =>
+      request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {
+        method: 'POST',
+        body: JSON.stringify({ entryId, status }),
+      }),
 
     setPoolAdmin: (poolId: string, entryId: string, isAdmin: boolean) =>
       request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {

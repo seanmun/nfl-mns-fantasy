@@ -92,6 +92,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const published = poolWeek?.linesPublishedAt ?? null
   const deadline = poolWeek?.pickDeadlineAt ?? null
 
+  // A published ATS game with no number is OFF THE BOARD — the admin
+  // couldn't or wouldn't hang a line on it. Shown, never pickable, and
+  // it can come back on the board if the admin fills it in later.
+  const isOffBoard = (spread: number | null) =>
+    pool.spreadMode === 'ats' && published != null && spread == null
+
   const slate = slateRows.map((g) => ({
     gameId: g.gameId,
     kickoffAt: g.kickoffAt,
@@ -102,12 +108,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     spread: g.spread,
     home: teamById.get(g.homeTeamId) ?? null,
     away: teamById.get(g.awayTeamId) ?? null,
-    open: isPickable({
-      now,
-      linesPublishedAt: published,
-      pickDeadlineAt: deadline,
-      kickoffAt: g.kickoffAt,
-    }),
+    offBoard: isOffBoard(g.spread),
+    open:
+      !isOffBoard(g.spread) &&
+      isPickable({
+        now,
+        linesPublishedAt: published,
+        pickDeadlineAt: deadline,
+        kickoffAt: g.kickoffAt,
+      }),
   }))
 
   // ── Picks ───────────────────────────────────────────────────────
@@ -130,10 +139,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const revealed = await othersPicksVisible(pool.id, week.id)
   let others: unknown[] = []
   if (revealed) {
-    const allEntries = await db
-      .select()
-      .from(nflPoolEntries)
-      .where(eq(nflPoolEntries.poolId, pool.id))
+    const allEntries = (
+      await db.select().from(nflPoolEntries).where(eq(nflPoolEntries.poolId, pool.id))
+    ).filter((e) => e.status === 'active')
     const rows = await db
       .select()
       .from(nflPicks)
@@ -195,7 +203,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const allPoolEntries = await db
     .select({ id: nflPoolEntries.id })
     .from(nflPoolEntries)
-    .where(eq(nflPoolEntries.poolId, pool.id))
+    .where(and(eq(nflPoolEntries.poolId, pool.id), eq(nflPoolEntries.status, 'active')))
   const weekPickRows = allPoolEntries.length
     ? await db
         .select({ entryId: nflPicks.entryId })
@@ -298,6 +306,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     entries: ctx.entries.map((e) => ({
       id: e.id,
       entryName: e.entryName,
+      status: e.status,
       submittedAt: submittedByEntry.get(e.id) ?? null,
     })),
     myPicks,
@@ -313,6 +322,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { entryId } = (req.body ?? {}) as { entryId?: string }
     if (!entryId || !myEntryIds.includes(entryId)) {
       return res.status(403).json({ error: 'That entry is not yours.' })
+    }
+    if (ctx.entries.find((e) => e.id === entryId)?.status !== 'active') {
+      return res.status(403).json({ errors: ['This entry is not active this season.'] })
     }
     if (!published) {
       return res.status(400).json({ errors: ['This week is not open yet.'] })
@@ -387,6 +399,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!entryId || !myEntryIds.includes(entryId)) {
     return res.status(403).json({ error: 'That entry is not yours.' })
   }
+  if (ctx.entries.find((e) => e.id === entryId)?.status !== 'active') {
+    return res.status(403).json({ error: 'This entry is not active this season.' })
+  }
   if (!Array.isArray(picks)) {
     return res.status(400).json({ error: 'No picks supplied.' })
   }
@@ -416,13 +431,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     poolType: pool.poolType,
     picksRequired: pool.picksRequired ?? config.picksRequired ?? null,
     keyPickEnabled: config.keyPick === true,
-    slate: slateRows.map((g) => ({
-      gameId: g.gameId,
-      homeTeamId: g.homeTeamId,
-      awayTeamId: g.awayTeamId,
-      kickoffAt: g.kickoffAt,
-      spread: g.spread,
-    })),
+    // Off-the-board games are simply not in the validator's slate, so a
+    // pick on one fails the same way a pick on an excluded game does.
+    slate: slateRows
+      .filter((g) => !isOffBoard(g.spread))
+      .map((g) => ({
+        gameId: g.gameId,
+        homeTeamId: g.homeTeamId,
+        awayTeamId: g.awayTeamId,
+        kickoffAt: g.kickoffAt,
+        spread: g.spread,
+      })),
     existing,
     proposed: picks,
     now,

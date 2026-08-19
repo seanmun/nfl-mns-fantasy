@@ -44,10 +44,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .where(and(eq(nflPoolWeeks.poolId, pool.id), eq(nflPoolWeeks.weekId, week.id)))
     .limit(1)
 
-  const entries = await db
-    .select()
-    .from(nflPoolEntries)
-    .where(eq(nflPoolEntries.poolId, pool.id))
+  // ACTIVE entries only, throughout: benched and banned are out of the
+  // counts, the short list, and every blast.
+  const entries = (
+    await db.select().from(nflPoolEntries).where(eq(nflPoolEntries.poolId, pool.id))
+  ).filter((e) => e.status === 'active')
   const owners = entries.length
     ? await db
         .select({ id: users.id, email: users.email, displayName: users.displayName })

@@ -386,6 +386,10 @@ export const nflPoolEntries = nflSchema.table('pool_entries', {
   // in a contest the member joined — not marketing, and conflating the
   // two would let a marketing opt-out silently cost someone their week.
   emailReminders: boolean('email_reminders').notNull().default(true),
+  // 'active' | 'benched' | 'banned'. Benched sit the season out but stay
+  // in the system for next year; banned are out and cannot rejoin. Both
+  // vanish from standings, picks, pulse counts and every email.
+  status: text('status').$type<EntryStatus>().notNull().default('active'),
   // Survivor. strikes counts losses; isEliminated is a cached read of
   // strikes >= scoringConfig.maxStrikes, written by the grader — never
   // trust it as the source of truth when regrading, recompute from picks.
@@ -599,6 +603,7 @@ export interface PrizesConfig {
   segments: PrizeSegment[]
 }
 
+export type EntryStatus = 'active' | 'benched' | 'banned'
 export type SeasonType = 'pre' | 'regular' | 'post' | 'test'
 export type GameStatus = 'scheduled' | 'in_progress' | 'final' | 'postponed' | 'cancelled'
 // Where a pool's official spread came from: 'api' is the untouched

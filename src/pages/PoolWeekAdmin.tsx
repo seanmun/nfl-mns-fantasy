@@ -30,6 +30,8 @@ interface AdminGame {
   spreadSource: 'api' | 'manual'
   marketSpread: number | null
   started: boolean
+  // Published + numbered: this line is locked for the season.
+  locked: boolean
 }
 
 interface WeekAdminResponse {
@@ -77,6 +79,9 @@ export function PoolWeekAdmin() {
 
   const [slate, setSlate] = useState<AdminGame[]>([])
   const [dirty, setDirty] = useState(false)
+  // Non-null = the publish confirm panel is open, holding the message
+  // that will top the lines email.
+  const [publishMsg, setPublishMsg] = useState<string | null>(null)
   useEffect(() => {
     if (data) {
       setSlate(data.slate)
@@ -108,7 +113,7 @@ export function PoolWeekAdmin() {
     // the previously saved slate while the manager's unticked Thursday
     // games sat unsaved on screen — his edits silently ignored, and no
     // way to tell from the result that it happened.
-    mutationFn: async () => {
+    mutationFn: async (message: string) => {
       await call({
         method: 'PUT',
         body: JSON.stringify({
@@ -119,10 +124,16 @@ export function PoolWeekAdmin() {
           })),
         }),
       })
-      return call<{ pickDeadlineAt: string }>({ method: 'POST', body: JSON.stringify({}) })
+      return call<{ pickDeadlineAt: string; emailed: number }>({
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      })
     },
     onSuccess: (r) => {
-      toast.success(`Published. Picks close ${kickoffLabel(r.pickDeadlineAt)}`)
+      setPublishMsg(null)
+      toast.success(
+        `Published — lines emailed to ${r.emailed}. Picks close ${kickoffLabel(r.pickDeadlineAt)}`
+      )
       qc.invalidateQueries({ queryKey: ['week-admin', poolId] })
     },
     onError: (e: Error) => toast.error(e.message),
@@ -134,8 +145,10 @@ export function PoolWeekAdmin() {
 
   const included = slate.filter((g) => g.isIncluded)
   const ats = data.pool.spreadMode === 'ats'
+  // No number is legal now: that game goes out OFF THE BOARD, and can
+  // get its line later through this same page.
   const missingSpreads = ats ? included.filter((g) => g.spread == null) : []
-  const canPublish = included.length > 0 && missingSpreads.length === 0
+  const canPublish = included.length > 0
 
   const update = (gameId: string, patch: Partial<AdminGame>) => {
     setDirty(true)
@@ -206,8 +219,8 @@ export function PoolWeekAdmin() {
             ) : null}
           </b>
           {missingSpreads.length > 0 ? (
-            <span className="text-[0.85rem] text-[var(--color-pick-loss)] font-semibold">
-              {missingSpreads.length} still need a number
+            <span className="text-[0.85rem] text-[var(--color-key)] font-semibold">
+              {missingSpreads.length} will go OFF THE BOARD
             </span>
           ) : data.suggestedDeadline && !data.publishedAt ? (
             <span className="text-[0.85rem] text-[var(--color-muted-foreground)]">
@@ -215,22 +228,66 @@ export function PoolWeekAdmin() {
             </span>
           ) : null}
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => save.mutate()}
-            disabled={save.isPending}
-            className="flex-1 min-h-[var(--tap-target-min)] rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-          >
-            {save.isPending ? 'Saving…' : dirty ? 'Save draft' : 'Saved'}
-          </button>
-          <button
-            onClick={() => publish.mutate()}
-            disabled={!canPublish || publish.isPending}
-            className="flex-1 min-h-[var(--tap-target-min)] rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold disabled:bg-[var(--color-border-interactive)] disabled:text-[var(--color-card)]"
-          >
-            {publish.isPending ? 'Publishing…' : data.publishedAt ? 'Re-publish' : 'Publish week'}
-          </button>
-        </div>
+        {publishMsg != null ? (
+          <div className="flex flex-col gap-2">
+            <label className="text-[0.85rem] font-semibold" htmlFor="publish-msg">
+              Note on top of the lines email (optional)
+            </label>
+            <textarea
+              id="publish-msg"
+              value={publishMsg}
+              onChange={(e) => setPublishMsg(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="e.g. Thursday's off the board until we know who's starting…"
+              className="px-3 py-2 rounded-lg bg-[var(--color-muted)] border-2 border-[var(--color-border-interactive)] leading-relaxed"
+            />
+            {missingSpreads.length > 0 ? (
+              <p className="text-[0.85rem] text-[var(--color-key)]">
+                {missingSpreads.length}{' '}
+                {missingSpreads.length === 1 ? 'game goes' : 'games go'} out OFF THE BOARD —
+                unpickable until you give {missingSpreads.length === 1 ? 'it' : 'them'} a
+                number here and publish again.
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              <button
+                onClick={() => publish.mutate(publishMsg.trim())}
+                disabled={publish.isPending}
+                className="flex-1 min-h-[var(--tap-target-min)] rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold disabled:opacity-50"
+              >
+                {publish.isPending
+                  ? 'Publishing…'
+                  : data.publishedAt
+                    ? 'Lock & email the update'
+                    : 'Publish, lock & email everyone'}
+              </button>
+              <button
+                onClick={() => setPublishMsg(null)}
+                className="min-h-[var(--tap-target-min)] px-4 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={() => save.mutate()}
+              disabled={save.isPending}
+              className="flex-1 min-h-[var(--tap-target-min)] rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+            >
+              {save.isPending ? 'Saving…' : dirty ? 'Save draft' : 'Saved'}
+            </button>
+            <button
+              onClick={() => setPublishMsg('')}
+              disabled={!canPublish || publish.isPending}
+              className="flex-1 min-h-[var(--tap-target-min)] rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold disabled:bg-[var(--color-border-interactive)] disabled:text-[var(--color-card)]"
+            >
+              {data.publishedAt ? 'Fill lines & re-publish' : 'Publish week'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -278,22 +335,60 @@ function AdminGameRow({
       </label>
 
       {ats && game.isIncluded ? (
-        <div className="flex items-center gap-3 pl-9">
+        <div className="flex items-center gap-3 pl-9 flex-wrap">
           <label className="text-[0.85rem] text-[var(--color-muted-foreground)]">
             {game.home?.nickname} line
           </label>
-          <input
-            type="number"
-            step="0.5"
-            inputMode="decimal"
-            disabled={game.started}
-            value={game.spread ?? ''}
-            onChange={(e) =>
-              onChange({ spread: e.target.value === '' ? null : Number(e.target.value) })
-            }
-            placeholder="—"
-            className="w-24 min-h-[var(--tap-target-min)] px-3 rounded-lg bg-[var(--color-muted)] border-2 border-[var(--color-border-interactive)] font-mono font-bold tabular-nums text-center"
-          />
+          {game.locked ? (
+            <span className="font-mono font-bold tabular-nums text-[1.1rem]">
+              {game.spread}
+              <span className="ml-2 text-[0.7rem] uppercase tracking-wider text-[var(--color-locked)]">
+                &#128274; locked
+              </span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              {/* Steppers, not a keyboard: phone number pads have no
+                  minus key, and lines only ever move in halves. */}
+              <button
+                type="button"
+                aria-label="Half a point toward the home team"
+                disabled={game.started}
+                onClick={() => onChange({ spread: (game.spread ?? 0) - 0.5 })}
+                className="min-h-[var(--tap-target-min)] min-w-[var(--tap-target-min)] rounded-lg border-2 border-[var(--color-border-interactive)] font-black text-[1.2rem]"
+              >
+                &minus;
+              </button>
+              <span className="w-20 text-center font-mono font-bold tabular-nums text-[1.1rem]">
+                {game.spread == null ? (
+                  <span className="text-[0.7rem] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                    off board
+                  </span>
+                ) : (
+                  game.spread > 0 ? `+${game.spread}` : game.spread
+                )}
+              </span>
+              <button
+                type="button"
+                aria-label="Half a point toward the away team"
+                disabled={game.started}
+                onClick={() => onChange({ spread: (game.spread ?? 0) + 0.5 })}
+                className="min-h-[var(--tap-target-min)] min-w-[var(--tap-target-min)] rounded-lg border-2 border-[var(--color-border-interactive)] font-black text-[1.2rem]"
+              >
+                +
+              </button>
+              {game.spread != null ? (
+                <button
+                  type="button"
+                  disabled={game.started}
+                  onClick={() => onChange({ spread: null })}
+                  className="ml-1 min-h-[var(--tap-target-min)] px-2 rounded-lg text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </span>
+          )}
           {/* The market number is shown for comparison only. Grading
               reads the manager's number, never this one. */}
           {game.marketSpread != null ? (

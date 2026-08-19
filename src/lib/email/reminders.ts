@@ -141,11 +141,12 @@ export async function sendReminders(
     return result
   }
 
+  // ACTIVE entries only — benched and banned members get no nudges.
   const entries = await db
     .select({ entry: nflPoolEntries, email: users.email })
     .from(nflPoolEntries)
     .innerJoin(users, eq(users.id, nflPoolEntries.userId))
-    .where(eq(nflPoolEntries.poolId, pool.id))
+    .where(and(eq(nflPoolEntries.poolId, pool.id), eq(nflPoolEntries.status, 'active')))
 
   const messages: Message[] = []
 
