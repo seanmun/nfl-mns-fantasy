@@ -3,7 +3,10 @@ import { neon } from '@neondatabase/serverless'
 import { drizzle } from 'drizzle-orm/neon-http'
 import { and, eq, inArray } from 'drizzle-orm'
 import * as schema from '../src/lib/db/schema.js'
-import { nflGames, nflTeams, nflWeeks } from '../src/lib/db/schema.js'
+import {
+  nflEntryWeeks, nflGames, nflPicks, nflPoolAnnouncements,
+  nflPoolGames, nflPoolWeeks, nflTeams, nflWeeks,
+} from '../src/lib/db/schema.js'
 import { getScoreboard, abbrOf, sideOf, toGameStatus, winnerSide, scoreOf } from '../api/_espn.js'
 
 // `.env.local`, not `.env` — see the note in drizzle.config.ts.
@@ -29,12 +32,13 @@ const SEASON = Number(process.env.NFL_SEASON) || 2026
 // Which real preseason games go in which test week. Identified by the
 // pairing rather than by ESPN id so this reads as the plan does.
 const PLAN: Array<{ week: number; label: string; games: string[] }> = [
-  { week: 1, label: 'Test Week 1', games: ['LAR@KC', 'JAX@NO'] },
-  { week: 2, label: 'Test Week 2', games: ['PHI@BAL', 'DAL@SEA'] },
+  { week: 1, label: 'Test Week 1', games: ['LV@HOU', 'SF@LAC'] },          // Thu Aug 20
+  { week: 2, label: 'Test Week 2', games: ['NYJ@PIT', 'CAR@JAX', 'GB@DEN'] }, // Fri Aug 21
+  { week: 3, label: 'Test Week 3', games: ['WSH@DET', 'BUF@CLE', 'ATL@IND'] }, // Sat Aug 22
 ]
 
-// ESPN preseason week holding tonight's slate.
-const ESPN_PRESEASON_WEEK = 2
+// ESPN preseason week holding this slate.
+const ESPN_PRESEASON_WEEK = 3
 
 async function main() {
   const teams = await db.select().from(nflTeams)
@@ -60,8 +64,15 @@ async function main() {
     .from(nflWeeks)
     .where(and(eq(nflWeeks.season, SEASON), eq(nflWeeks.seasonType, 'test')))
   if (old.length) {
-    await db.delete(nflGames).where(inArray(nflGames.weekId, old.map((w) => w.id)))
-    await db.delete(nflWeeks).where(inArray(nflWeeks.id, old.map((w) => w.id)))
+    const weekIds = old.map((w) => w.id)
+    // Leaf-first: delete everything that references these weeks or their games.
+    await db.delete(nflPicks).where(inArray(nflPicks.weekId, weekIds))
+    await db.delete(nflEntryWeeks).where(inArray(nflEntryWeeks.weekId, weekIds))
+    await db.delete(nflPoolGames).where(inArray(nflPoolGames.weekId, weekIds))
+    await db.delete(nflPoolWeeks).where(inArray(nflPoolWeeks.weekId, weekIds))
+    await db.delete(nflPoolAnnouncements).where(inArray(nflPoolAnnouncements.weekId, weekIds))
+    await db.delete(nflGames).where(inArray(nflGames.weekId, weekIds))
+    await db.delete(nflWeeks).where(inArray(nflWeeks.id, weekIds))
     console.log(`cleared ${old.length} previous test week(s)`)
   }
 
