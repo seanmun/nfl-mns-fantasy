@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/client'
 import { kickoffLabel } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
+import { PoolTabBar } from '@/components/layout/PoolTabBar'
 
 // The pool's front door. One hero per entry carries the week's answer —
 // pick, locked in, live, graded — with the entry's rank riding on it.
@@ -107,11 +108,12 @@ export function PoolHome() {
             : 'Picks are open'
 
   return (
-    <div className="max-w-xl mx-auto w-full px-4 py-6 flex flex-col gap-4">
+    <div className="max-w-xl mx-auto w-full px-4 py-6 pb-28 flex flex-col gap-4">
       {/* ── Header: title once, week once, state once ── */}
       <div>
         <Link
           to="/"
+          state={{ stay: true }}
           className="inline-flex items-center min-h-[var(--tap-target-min)] font-bold text-[var(--color-accent)]"
         >
           &larr; My pools
@@ -292,6 +294,8 @@ export function PoolHome() {
           </div>
         )
       ) : null}
+
+      <PoolTabBar />
     </div>
   )
 }

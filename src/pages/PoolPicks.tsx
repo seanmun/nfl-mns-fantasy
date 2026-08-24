@@ -6,6 +6,7 @@ import { createApi, type ApiOtherPick, type ApiSlateGame, type SavePick } from '
 import { useAutoSave } from '@/hooks/useAutoSave'
 import { kickoffLabel, dayLabel, teamSpread } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
+import { PoolTabBar } from '@/components/layout/PoolTabBar'
 
 export function PoolPicks() {
   const { id: poolId = '' } = useParams()
@@ -137,9 +138,10 @@ export function PoolPicks() {
   // that plainly. An empty list would read as a broken app.
   if (!data.published) {
     return (
-      <div className="pb-40">
+      <div className="pb-28">
         {pageHeader}
         <NotOpenYet note={data.pool.managerNote} />
+        <PoolTabBar />
       </div>
     )
   }
@@ -185,8 +187,17 @@ export function PoolPicks() {
   let lastDay = ''
 
   return (
-    <div className="pb-40">
+    <div className="pb-56">
       {pageHeader}
+
+      {!data.revealed ? (
+        // The one instruction, stated instead of implied.
+        <p className="mx-4 mt-4 rounded-lg border-l-4 border-[var(--color-accent)] bg-[var(--color-card)] px-3 py-2 font-semibold">
+          Pick {data.pool.poolType === 'survivor' ? 'one team' : need === data.slate.length ? 'every game' : `${need} games`}
+          {wantsKey ? ', star ★ your surest one' : ''}, then tap{' '}
+          <b className="text-[var(--color-accent)]">Submit</b>.
+        </p>
+      ) : null}
 
       {data.entries.length > 1 ? (
         <EntryPicker
@@ -201,14 +212,6 @@ export function PoolPicks() {
         />
       ) : null}
 
-      {data.pool.managerNote ? (
-        <div className="mx-4 mt-4 rounded-xl border border-[var(--color-border)] border-l-4 border-l-[var(--color-accent)] bg-[var(--color-card)] p-4">
-          <h2 className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)] mb-2">
-            Note from the manager
-          </h2>
-          <Markdown source={data.pool.managerNote} />
-        </div>
-      ) : null}
 
       {data.revealed ? (
         // Locked week: viewing, not picking. Tabs replace instructions.
@@ -317,6 +320,8 @@ export function PoolPicks() {
           submitError={submit.error ? (submit.error as Error).message : null}
         />
       ) : null}
+
+      <PoolTabBar />
     </div>
   )
 }
@@ -565,7 +570,7 @@ function StatusBar({
   // entirely rather than sitting as a small warning.
   if (state === 'error') {
     return (
-      <div className="fixed left-0 right-0 bottom-0 bg-[var(--color-pick-loss)] text-[var(--color-background)] p-4 flex items-center gap-3">
+      <div className="fixed left-0 right-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 bg-[var(--color-pick-loss)] text-[var(--color-background)] p-4 flex items-center gap-3">
         <div className="flex-1">
           <b className="block text-[1.05rem]">Not saved</b>
           <span className="text-[0.85rem]">{error ?? 'Your last change did not save.'}</span>
@@ -593,7 +598,7 @@ function StatusBar({
             : 'All saved — now submit to lock them in'
 
   return (
-    <div className="fixed left-0 right-0 bottom-0 bg-[var(--color-card)] border-t border-[var(--color-border-interactive)] px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex items-center gap-3">
+    <div className="fixed left-0 right-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 bg-[var(--color-card)] border-t border-[var(--color-border-interactive)] px-4 py-3 flex items-center gap-3">
       <div className="flex-1">
         <b className={'block text-[1.15rem] tabular-nums ' + (done ? 'text-[var(--color-accent)]' : '')}>
           {have} of {need} picks

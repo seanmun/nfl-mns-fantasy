@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createApi } from '@/lib/api/client'
 import { kickoffLabel } from '@/lib/utils'
+import { PoolTabBar } from '@/components/layout/PoolTabBar'
 
 // The admin's blast composer. Every send is logged and listed below the
 // form, so a resend is recognisable as a resend and a half-failed send
@@ -60,7 +61,7 @@ export function PoolMessage() {
   const ready = subject.trim().length > 0 && body.trim().length > 0
 
   return (
-    <div className="max-w-xl mx-auto w-full px-4 py-6 flex flex-col gap-5">
+    <div className="max-w-xl mx-auto w-full px-4 py-6 pb-28 flex flex-col gap-5">
       <div>
         <Link
           to={`/pool/${poolId}`}
@@ -164,6 +165,8 @@ export function PoolMessage() {
           </ul>
         </section>
       ) : null}
+
+      <PoolTabBar />
     </div>
   )
 }

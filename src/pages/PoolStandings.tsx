@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createApi, type StandingsRow } from '@/lib/api/client'
+import { PoolTabBar } from '@/components/layout/PoolTabBar'
 
 function WinnersBlock({
   title,
@@ -117,7 +118,7 @@ export function PoolStandings() {
   const champions = data.final ? data.rows.filter((r) => r.rank === 1) : []
 
   return (
-    <div className="max-w-xl mx-auto w-full px-4 py-6 flex flex-col gap-4">
+    <div className="max-w-xl mx-auto w-full px-4 py-6 pb-28 flex flex-col gap-4">
       <div>
         <Link
           to={`/pool/${poolId}`}
@@ -128,6 +129,9 @@ export function PoolStandings() {
         <h1 className="text-[1.7rem] font-extrabold leading-tight">
           {data.final ? 'Final standings' : 'Standings'}
         </h1>
+        <p className="mt-1 text-[var(--color-muted-foreground)]">
+          Most points wins. The key ★ total only breaks ties.
+        </p>
       </div>
 
       {data.final && champions.length ? (
@@ -225,22 +229,50 @@ export function PoolStandings() {
       ) : null}
 
       {!graded ? (
-        <p className="text-[var(--color-muted-foreground)] leading-relaxed">
-          Nothing graded yet — standings fill in as games go final.
-        </p>
+        // Before anything grades, a table of everyone tied at #1 reads
+        // as broken. Show the field, not a fake ranking.
+        <section className="flex flex-col gap-2">
+          <p className="text-[var(--color-muted-foreground)] leading-relaxed">
+            Nothing to rank yet — the board fills in as games finish. Here&rsquo;s
+            who&rsquo;s in:
+          </p>
+          <ul className="flex flex-col gap-1">
+            {rows.map((r) => (
+              <li
+                key={r.entryId}
+                className={
+                  'flex items-baseline justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 ' +
+                  (r.isMine ? 'border-[var(--color-accent)]' : '')
+                }
+              >
+                <span className="truncate">
+                  <b>{r.entryName}</b>
+                  {r.isMine ? (
+                    <span className="ml-2 text-[0.7rem] font-bold uppercase tracking-wider text-[var(--color-accent)]">
+                      you
+                    </span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-[0.8rem] text-[var(--color-muted-foreground)]">
+                  {r.ownerName ?? ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
-      <div className="overflow-x-auto -mx-4 px-4">
+      <div className={graded ? 'overflow-x-auto -mx-4 px-4' : 'hidden'}>
         <table className="w-full min-w-[24rem] border-collapse tabular-nums">
           <thead>
             <tr className="text-left text-[0.74rem] font-bold tracking-[0.14em] uppercase text-[var(--color-muted-foreground)]">
-              <th className="py-2 pr-2">#</th>
+              <th className="py-2 pr-2">Place</th>
               <th className="py-2 pr-3">Entry</th>
               <th className="py-2 pr-3 text-right">Points</th>
               <th className="py-2 pr-3 text-right" title="Key pick score — breaks ties">
                 Key ★
               </th>
-              <th className="py-2 text-right">W-L-P</th>
+              <th className="py-2 text-right">Record</th>
             </tr>
           </thead>
           <tbody>
@@ -375,6 +407,8 @@ export function PoolStandings() {
         Ties break on the key ★ column. A key pick scores no extra points during the
         week — it only decides ties.
       </p>
+
+      <PoolTabBar />
     </div>
   )
 }

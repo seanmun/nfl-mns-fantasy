@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth, useUser } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -10,6 +10,17 @@ export function MyPools() {
   const { user } = useUser()
   const api = useMemo(() => createApi(getToken), [getToken])
   const { data, isLoading } = useQuery({ queryKey: ['my-pools'], queryFn: () => api.myPools() })
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  // One pool = no list page to wade through: land straight in it. The
+  // pool's own "My pools" link passes stay:true, so backing out to this
+  // list still works.
+  const stay = (location.state as { stay?: boolean } | null)?.stay === true
+  const onlyPool = !isLoading && data?.pools.length === 1 ? data.pools[0].pool.id : null
+  useEffect(() => {
+    if (onlyPool && !stay) navigate(`/pool/${onlyPool}`, { replace: true })
+  }, [onlyPool, stay, navigate])
 
   return (
     <div className="px-4 py-8 flex flex-col gap-6">

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api/client'
 import { kickoffLabel, dayLabel } from '@/lib/utils'
+import { PoolTabBar } from '@/components/layout/PoolTabBar'
 
 // The manager's week builder: tick the games that count, set the
 // numbers, publish. Until publish, members see nothing.
@@ -158,7 +159,7 @@ export function PoolWeekAdmin() {
   let lastDay = ''
 
   return (
-    <div className="pb-44">
+    <div className="pb-60">
       <header className="px-4 pt-6 pb-4 border-b border-[var(--color-border)]">
         <Link
           to="/"
@@ -208,7 +209,7 @@ export function PoolWeekAdmin() {
         )
       })}
 
-      <div className="fixed left-0 right-0 bottom-0 bg-[var(--color-card)] border-t border-[var(--color-border-interactive)] px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex flex-col gap-2">
+      <div className="fixed left-0 right-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 bg-[var(--color-card)] border-t border-[var(--color-border-interactive)] px-4 py-3 flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
           <b className="text-[1.05rem] tabular-nums">
             {included.length} games in
@@ -289,6 +290,8 @@ export function PoolWeekAdmin() {
           </div>
         )}
       </div>
+
+      <PoolTabBar />
     </div>
   )
 }
