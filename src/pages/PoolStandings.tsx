@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
+import { useQuery } from '@tanstack/react-query'
 import { createApi, type StandingsRow } from '@/lib/api/client'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
 
@@ -69,7 +68,6 @@ export function PoolStandings() {
   const { getToken } = useAuth()
   const api = useMemo(() => createApi(getToken), [getToken])
 
-  const qc = useQueryClient()
   const [tab, setTab] = useState<'points' | 'key'>('points')
   const { data, isLoading, error } = useQuery({
     queryKey: ['standings', poolId],
@@ -77,27 +75,6 @@ export function PoolStandings() {
     refetchInterval: 60_000,
   })
 
-  const setStatus = useMutation({
-    mutationFn: ({ entryId, status }: { entryId: string; status: 'active' | 'benched' | 'banned' }) =>
-      api.setEntryStatus(poolId, entryId, status),
-    onSuccess: (_r, v) => {
-      toast.success(
-        v.status === 'active' ? 'Back in the pool' : v.status === 'benched' ? 'Benched' : 'Banned'
-      )
-      qc.invalidateQueries({ queryKey: ['standings', poolId] })
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
-  const setAdmin = useMutation({
-    mutationFn: ({ entryId, isAdmin }: { entryId: string; isAdmin: boolean }) =>
-      api.setPoolAdmin(poolId, entryId, isAdmin),
-    onSuccess: (_r, v) => {
-      toast.success(v.isAdmin ? 'Made admin' : 'Admin removed')
-      qc.invalidateQueries({ queryKey: ['standings', poolId] })
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
 
   if (isLoading) {
     return <p className="px-4 py-12 text-[var(--color-muted-foreground)]">Loading standings&hellip;</p>
@@ -262,145 +239,61 @@ export function PoolStandings() {
         </section>
       ) : null}
 
-      <div className={graded ? 'overflow-x-auto -mx-4 px-4' : 'hidden'}>
-        <table className="w-full min-w-[24rem] border-collapse tabular-nums">
-          <thead>
-            <tr className="text-left text-[0.74rem] font-bold tracking-[0.14em] uppercase text-[var(--color-muted-foreground)]">
-              <th className="py-2 pr-2">Place</th>
-              <th className="py-2 pr-3">Entry</th>
-              <th className="py-2 pr-3 text-right">Points</th>
-              <th className="py-2 pr-3 text-right" title="Key pick score — breaks ties">
-                Key ★
-              </th>
-              <th className="py-2 text-right">Record</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const w = r.weekly.reduce((n, x) => n + x.correct, 0)
-              const l = r.weekly.reduce((n, x) => n + x.incorrect, 0)
-              const p = r.weekly.reduce((n, x) => n + x.push, 0)
-              return (
-                <tr
-                  key={r.entryId}
-                  className={
-                    'border-t border-[var(--color-border)] text-[1.05rem] ' +
-                    (r.isMine ? 'bg-[var(--color-muted)]' : '')
-                  }
-                >
-                  <td className="py-3 pr-2 font-bold">{r.rank}</td>
-                  <td className="py-3 pr-3">
-                    <b>{r.entryName}</b>
-                    {r.ownerIsAdmin ? (
-                      <span className="ml-2 text-[0.7rem] font-bold uppercase tracking-wider text-[var(--color-key)]">
-                        {r.ownerIsCreator ? 'manager' : 'admin'}
-                      </span>
-                    ) : null}
-                    <span className="block text-[0.8rem] text-[var(--color-muted-foreground)]">
-                      {/* Username is public; email admin-only. */}
-                      {r.ownerName ?? ''}
-                      {r.ownerEmail ? ` · ${r.ownerEmail}` : ''}
-                    </span>
-                    {r.canToggleAdmin || r.canModerate ? (
-                      <span className="flex flex-wrap gap-1 mt-1">
-                        {r.canToggleAdmin ? (
-                          <button
-                            onClick={() =>
-                              setAdmin.mutate({ entryId: r.entryId, isAdmin: !r.ownerIsAdmin })
-                            }
-                            disabled={setAdmin.isPending}
-                            className="min-h-[2rem] px-2 rounded border-2 border-[var(--color-border-interactive)] text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
-                          >
-                            {r.ownerIsAdmin ? 'Remove admin' : 'Make admin'}
-                          </button>
-                        ) : null}
-                        {r.canModerate ? (
-                          <>
-                            <button
-                              onClick={() =>
-                                setStatus.mutate({ entryId: r.entryId, status: 'benched' })
-                              }
-                              disabled={setStatus.isPending}
-                              className="min-h-[2rem] px-2 rounded border-2 border-[var(--color-border-interactive)] text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
-                            >
-                              Bench
-                            </button>
-                            <button
-                              onClick={() =>
-                                setStatus.mutate({ entryId: r.entryId, status: 'banned' })
-                              }
-                              disabled={setStatus.isPending}
-                              className="min-h-[2rem] px-2 rounded border-2 border-[var(--color-pick-loss)] text-[0.78rem] font-bold text-[var(--color-pick-loss)]"
-                            >
-                              Ban
-                            </button>
-                          </>
-                        ) : null}
-                      </span>
-                    ) : null}
-                    {r.isMine ? (
-                      <span className="ml-2 text-[0.74rem] font-bold uppercase tracking-wider text-[var(--color-accent)]">
-                        you
-                      </span>
-                    ) : null}
-                    {r.isEliminated ? (
-                      <span className="ml-2 text-[0.74rem] font-bold uppercase tracking-wider text-[var(--color-pick-loss)]">
-                        out
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="py-3 pr-3 text-right font-bold">{r.totalPoints}</td>
-                  <td className="py-3 pr-3 text-right text-[var(--color-key)]">{r.keyPickScore}</td>
-                  <td className="py-3 text-right text-[var(--color-muted-foreground)]">
-                    {w}-{l}-{p}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {data.inactive.length ? (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-muted-foreground)]">
-            Benched &amp; banned
-          </h2>
-          <ul className="flex flex-col gap-1">
-            {data.inactive.map((e) => (
+      {/* One card per entry — no table, no sideways scroll, nothing
+          bunched. Rank | name+username | points, and the admin detail
+          (email, bench/ban/admin) folded behind a Manage tap. */}
+      {graded ? (
+        <ul className="flex flex-col gap-2">
+          {rows.map((r) => {
+            const w = r.weekly.reduce((n, x) => n + x.correct, 0)
+            const l = r.weekly.reduce((n, x) => n + x.incorrect, 0)
+            const pp = r.weekly.reduce((n, x) => n + x.push, 0)
+            return (
               <li
-                key={e.entryId}
-                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg bg-[var(--color-card)] border border-[var(--color-border)] px-3 py-2"
+                key={r.entryId}
+                className={
+                  'rounded-xl border bg-[var(--color-card)] px-3 py-2.5 ' +
+                  (r.isMine
+                    ? 'border-[var(--color-accent)]'
+                    : 'border-[var(--color-border)]')
+                }
               >
-                <span className="truncate">
-                  <b>{e.entryName}</b>
-                  <span className="text-[0.8rem] text-[var(--color-muted-foreground)]">
-                    {' '}
-                    · {e.ownerName ?? ''}
-                    {e.ownerEmail ? ` · ${e.ownerEmail}` : ''}
+                <div className="flex items-center gap-3 tabular-nums">
+                  <b className="shrink-0 w-9 text-[1.3rem] text-center">{r.rank}</b>
+                  <span className="flex-1 min-w-0">
+                    <b className="block truncate text-[1.05rem]">
+                      {r.entryName}
+                      {r.isMine ? (
+                        <span className="ml-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[var(--color-accent)]">
+                          you
+                        </span>
+                      ) : null}
+                      {r.ownerIsAdmin ? (
+                        <span className="ml-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[var(--color-key)]">
+                          {r.ownerIsCreator ? 'mgr' : 'adm'}
+                        </span>
+                      ) : null}
+                      {r.isEliminated ? (
+                        <span className="ml-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[var(--color-pick-loss)]">
+                          out
+                        </span>
+                      ) : null}
+                    </b>
+                    <span className="block truncate text-[0.8rem] text-[var(--color-muted-foreground)]">
+                      {r.ownerName ?? ''}
+                    </span>
                   </span>
-                  <span
-                    className={
-                      'ml-2 text-[0.7rem] font-bold uppercase tracking-wider ' +
-                      (e.status === 'banned'
-                        ? 'text-[var(--color-pick-loss)]'
-                        : 'text-[var(--color-pick-push)]')
-                    }
-                  >
-                    {e.status}
+                  <span className="shrink-0 text-right">
+                    <b className="block text-[1.2rem] leading-tight">{r.totalPoints}</b>
+                    <span className="block text-[0.78rem] text-[var(--color-muted-foreground)]">
+                      <span className="text-[var(--color-key)]">★{r.keyPickScore}</span> · {w}-{l}-{pp}
+                    </span>
                   </span>
-                </span>
-                <button
-                  onClick={() => setStatus.mutate({ entryId: e.entryId, status: 'active' })}
-                  disabled={setStatus.isPending}
-                  className="min-h-[2rem] px-2 rounded border-2 border-[var(--color-border-interactive)] text-[0.78rem] font-bold text-[var(--color-muted-foreground)]"
-                >
-                  Reactivate
-                </button>
+                </div>
               </li>
-            ))}
-          </ul>
-        </section>
+            )
+          })}
+        </ul>
       ) : null}
 
       <p className="text-[0.85rem] text-[var(--color-muted-foreground)]">

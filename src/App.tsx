@@ -9,6 +9,7 @@ import { JoinPool } from '@/pages/JoinPool'
 import { PoolHome } from '@/pages/PoolHome'
 import { PoolPicks } from '@/pages/PoolPicks'
 import { PoolStandings } from '@/pages/PoolStandings'
+import { PoolEntriesAdmin } from '@/pages/PoolEntriesAdmin'
 import { PoolMessage } from '@/pages/PoolMessage'
 import { PoolWeekAdmin } from '@/pages/PoolWeekAdmin'
 import { RulesPreview } from '@/pages/RulesPreview'
@@ -90,6 +91,7 @@ export default function App() {
         {/* Manager tools live under /lm, matching wnba. */}
         <Route path="/lm/:id/week" element={<ProtectedRoute><PoolWeekAdmin /></ProtectedRoute>} />
         <Route path="/lm/:id/message" element={<ProtectedRoute><PoolMessage /></ProtectedRoute>} />
+        <Route path="/lm/:id/entries" element={<ProtectedRoute><PoolEntriesAdmin /></ProtectedRoute>} />
 
         <Route path="/rules-preview" element={<RulesPreview />} />
         <Route path="*" element={<NotFound />} />
