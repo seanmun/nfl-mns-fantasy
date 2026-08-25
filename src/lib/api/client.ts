@@ -352,6 +352,20 @@ export function createApi(getToken: GetToken) {
         }
       ),
 
+    updatePoolSettings: (
+      poolId: string,
+      settings: {
+        name?: string
+        managerNote?: string | null
+        rulesMarkdown?: string | null
+        reminderHoursBefore?: number | null
+      }
+    ) =>
+      request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {
+        method: 'POST',
+        body: JSON.stringify({ settings }),
+      }),
+
     archivePool: (poolId: string, archive: boolean) =>
       request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {
         method: 'POST',

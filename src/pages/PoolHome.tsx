@@ -439,6 +439,12 @@ function AdminCard({ poolId, deadlinePassed }: { poolId: string; deadlinePassed:
         >
           Manage entries
         </Link>
+        <Link
+          to={`/lm/${poolId}/settings`}
+          className="min-h-[var(--tap-target-min)] px-4 flex items-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
+        >
+          Settings
+        </Link>
         {pulse.joinCode ? (
           <button
             onClick={() => {

@@ -81,6 +81,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true })
   }
 
+  // ── Edit pool settings ──────────────────────────────────────────
+  // POST { settings: { name?, managerNote?, rulesMarkdown?, reminderHoursBefore? } }
+  // Pool admins. The owner-verbs that were missing: rename your own
+  // thing, edit its note and rules.
+  if (req.method === 'POST' && req.body?.settings && typeof req.body.settings === 'object') {
+    if (!ctx.isPoolAdmin) {
+      return res.status(403).json({ error: 'Only pool admins can edit settings.' })
+    }
+    const sIn = req.body.settings as {
+      name?: string
+      managerNote?: string | null
+      rulesMarkdown?: string | null
+      reminderHoursBefore?: number | null
+    }
+    const patch: Record<string, unknown> = {}
+    if (typeof sIn.name === 'string') {
+      const name = sIn.name.trim()
+      if (!name) return res.status(400).json({ error: 'The pool needs a name.' })
+      patch.name = name.slice(0, 80)
+    }
+    if ('managerNote' in sIn) patch.managerNote = sIn.managerNote?.trim() || null
+    if ('rulesMarkdown' in sIn) patch.rulesMarkdown = sIn.rulesMarkdown?.trim() || null
+    if ('reminderHoursBefore' in sIn) {
+      patch.reminderHoursBefore =
+        sIn.reminderHoursBefore == null
+          ? null
+          : Math.max(1, Math.min(96, Number(sIn.reminderHoursBefore) || 24))
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change.' })
+    await db.update(nflPools).set(patch).where(eq(nflPools.id, poolId))
+    return res.status(200).json({ ok: true })
+  }
+
   // ── Grant / revoke co-admin ─────────────────────────────────────
   // POST { entryId, isAdmin } — creator only. Writes every entry of
   // the target USER so admin-ness never depends on which entry you

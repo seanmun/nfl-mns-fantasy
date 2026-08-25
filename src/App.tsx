@@ -11,6 +11,7 @@ import { PoolPicks } from '@/pages/PoolPicks'
 import { PoolStandings } from '@/pages/PoolStandings'
 import { PoolEntriesAdmin } from '@/pages/PoolEntriesAdmin'
 import { PoolMessage } from '@/pages/PoolMessage'
+import { PoolSettings } from '@/pages/PoolSettings'
 import { PoolWeekAdmin } from '@/pages/PoolWeekAdmin'
 import { RulesPreview } from '@/pages/RulesPreview'
 import { NotFound } from '@/pages/NotFound'
@@ -92,6 +93,7 @@ export default function App() {
         <Route path="/lm/:id/week" element={<ProtectedRoute><PoolWeekAdmin /></ProtectedRoute>} />
         <Route path="/lm/:id/message" element={<ProtectedRoute><PoolMessage /></ProtectedRoute>} />
         <Route path="/lm/:id/entries" element={<ProtectedRoute><PoolEntriesAdmin /></ProtectedRoute>} />
+        <Route path="/lm/:id/settings" element={<ProtectedRoute><PoolSettings /></ProtectedRoute>} />
 
         <Route path="/rules-preview" element={<RulesPreview />} />
         <Route path="*" element={<NotFound />} />
