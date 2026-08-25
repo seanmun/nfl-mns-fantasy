@@ -15,7 +15,10 @@ function client(): Resend {
 }
 
 function from(): string {
-  return process.env.RESEND_FROM_EMAIL || 'MNS Fantasy <noreply@mnsfantasy.com>'
+  // Fallback must be a domain the shared Resend key is verified for —
+  // e.mnsfantasy.com, same as every other app. The apex looked nicer and
+  // 403'd every send (2026-08-25).
+  return process.env.RESEND_FROM_EMAIL || 'MNS Fantasy <updates@e.mnsfantasy.com>'
 }
 
 export interface Message {
