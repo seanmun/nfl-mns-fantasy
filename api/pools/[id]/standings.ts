@@ -6,6 +6,7 @@ import { isAdmin as isSiteAdmin } from '../../_middleware.js'
 import {
   nflEntryWeeks,
   nflGames,
+  nflPools,
   nflPoolEntries,
   nflPoolGames,
   nflPoolWeeks,
@@ -63,6 +64,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .update(nflPoolEntries)
       .set({ status: status as 'active' | 'benched' | 'banned' })
       .where(eq(nflPoolEntries.id, entryId))
+    return res.status(200).json({ ok: true })
+  }
+
+  // ── Archive / reopen the pool ───────────────────────────────────
+  // POST { archive: true|false } — creator only. Archived = status
+  // 'completed': drops to the Finished section, out of auto-open.
+  if (req.method === 'POST' && typeof req.body?.archive === 'boolean') {
+    if (ctx.pool.createdBy !== ctx.userId && !isSiteAdmin(ctx.userId)) {
+      return res.status(403).json({ error: 'Only the pool creator can archive it.' })
+    }
+    await db
+      .update(nflPools)
+      .set({ status: req.body.archive ? 'completed' : 'open' })
+      .where(eq(nflPools.id, poolId))
     return res.status(200).json({ ok: true })
   }
 

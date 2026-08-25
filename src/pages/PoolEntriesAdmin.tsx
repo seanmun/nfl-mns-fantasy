@@ -178,6 +178,20 @@ export function PoolEntriesAdmin() {
         </section>
       ) : null}
 
+      <button
+        onClick={() => {
+          if (window.confirm('Archive this pool? It moves to Finished pools and stops being anyone\'s active pool. You can reopen it the same way.')) {
+            api.archivePool(poolId, true).then(() => {
+              toast.success('Pool archived')
+              window.location.href = '/'
+            }).catch((e: Error) => toast.error(e.message))
+          }
+        }}
+        className={btn + 'border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]'}
+      >
+        Archive this pool
+      </button>
+
       <PoolTabBar />
     </div>
   )

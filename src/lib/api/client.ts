@@ -352,6 +352,12 @@ export function createApi(getToken: GetToken) {
         }
       ),
 
+    archivePool: (poolId: string, archive: boolean) =>
+      request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {
+        method: 'POST',
+        body: JSON.stringify({ archive }),
+      }),
+
     setEntryStatus: (poolId: string, entryId: string, status: 'active' | 'benched' | 'banned') =>
       request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {
         method: 'POST',
