@@ -1,4 +1,11 @@
 @import "tailwindcss";
+/* Runtime palette + component styles from mns-ui (synced src/ui/).
+   tokens.css carries BOTH themes — Chalk light on bare :root, dark via
+   prefers-color-scheme and [data-theme] stamps — and, being unlayered,
+   it overrides the @theme block's values at runtime. The @theme block
+   below still names the tokens so Tailwind utilities exist. */
+@import "./ui/tokens.css";
+@import "./ui/mns-ui.css";
 
 /* Base tokens are the platform's — identical to the hub's index.css.
    Every app defines the same set so the shared header, footer and cards
@@ -31,46 +38,33 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* NFL-specific: pick and game states.
+/* NFL-specific tokens only. Pick states, key, locked and
+   border-interactive moved to mns-ui's tokens.css (2026-08-25) — both
+   palettes live there, measured, one place. What stays here is what no
+   other game needs.
 
-   Every value below was measured against its real backdrop rather than
-   eyeballed. Contrast ratios on --color-card (#141419):
-     pick-win     14.7   pick-loss   5.4   pick-pending  11.9
-     pick-push     5.7   locked      5.7
-   All clear WCAG AA for normal text (4.5). The audience for this app is
-   older and non-technical, so "probably readable" is not the bar.
-
-   --color-locked is deliberately the same grey as --color-pick-push and
-   as muted-foreground. The obvious choice for a locked row was a much
-   dimmer grey, which measured 2.11 and failed outright. Locked state is
-   carried by an icon and the word "Locked", not by colour — WCAG 1.4.1
-   forbids colour as the only signal anyway, so the dim grey was buying
-   nothing and costing legibility. */
+   --color-locked (in tokens.css) is deliberately the same grey as
+   pick-push and muted-foreground; locked state is carried by an icon
+   and the word "Locked", never colour alone (WCAG 1.4.1). */
 :root {
-  --color-pick-win: #00ff87;
-  --color-pick-loss: #ff453a;
-  --color-pick-push: #8e8e9a;
-  --color-pick-pending: #00e5ff;
-  --color-game-live: #ff2d55;
-  --color-locked: #8e8e9a;
-
-  /* Key pick. Amber rather than a second green so the two states can
-     never be confused, and 10.0:1 on --color-card — measured, not
-     eyeballed. State is also carried by a star and the word KEY, since
-     colour alone fails WCAG 1.4.1. */
-  --color-key: #ffb000;
-
-  /* The platform --color-border (#2a2a35) measures 1.39 against the page
-     background. That is fine for a decorative hairline and fails WCAG
-     1.4.11, which wants 3:1 for the boundary of anything you interact
-     with. Rather than change the shared token and drift from the rest of
-     the platform, interactive edges — pick buttons, cards you tap — use
-     this one instead: 3.79 on background, 3.52 on card. */
-  --color-border-interactive: #6b6b7d;
+  /* LIVE badge. Light value measured: 5.69 on background #f2f5f6,
+     6.24 on card #ffffff. */
+  --color-game-live: #b62c1e;
 
   /* Minimum comfortable target. WCAG 2.5.5 asks 44px; this audience is
      picking five games on a phone, often one-handed. */
   --tap-target-min: 3rem;
+}
+
+/* Dark value, same guards as tokens.css: 5.42 on background #0a0a0f,
+   5.03 on card #141419. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-game-live: #ff2d55;
+  }
+}
+:root[data-theme="dark"] {
+  --color-game-live: #ff2d55;
 }
 
 /* Base size bumped from the 16px default. Everything downstream is in

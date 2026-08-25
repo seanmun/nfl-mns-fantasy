@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react'
+import { ThemeToggle } from '@/ui/components'
 
 // Matches the hub's header — same height, same tokens, same wordmark
 // shape — so moving between mnsfantasy.com and this subdomain does not
@@ -15,7 +16,7 @@ export function Header() {
       <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
         <Link to="/" className="flex items-center">
           <span className="font-display text-2xl tracking-wide text-[var(--color-foreground)]">
-            MNS<span className="text-neon-green">nfl</span>
+            MNS<span className="text-[var(--color-accent)]">nfl</span>
           </span>
         </Link>
 
@@ -34,6 +35,7 @@ export function Header() {
           >
             All games
           </a>
+          <ThemeToggle />
           <SignedIn>
             <UserButton
               afterSignOutUrl="/"

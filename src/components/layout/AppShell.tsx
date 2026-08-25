@@ -16,7 +16,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="max-w-3xl mx-auto px-4 py-8 text-center flex flex-col gap-3">
           <p className="text-[0.95rem] text-[var(--color-muted-foreground)]">
             <span className="font-display text-[var(--color-foreground)]">
-              MNS<span className="text-neon-green">fantasy</span>
+              MNS<span className="text-[var(--color-accent)]">fantasy</span>
             </span>{' '}
             &mdash; Fantasy Sports That Never Sleep
           </p>

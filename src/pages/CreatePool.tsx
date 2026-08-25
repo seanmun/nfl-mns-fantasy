@@ -161,7 +161,7 @@ export function CreatePool() {
               className={
                 'text-left p-3 rounded-xl border-2 ' +
                 (poolType === t.value
-                  ? 'border-[var(--color-accent)] bg-[#0d2a1c]'
+                  ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]'
                   : 'border-[var(--color-border-interactive)] bg-[var(--color-card)]')
               }
             >

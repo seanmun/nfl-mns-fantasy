@@ -505,7 +505,7 @@ function TeamButton({
       className={
         'relative flex flex-col justify-center gap-0.5 min-h-16 py-2.5 pl-3.5 pr-2.5 rounded-lg border-2 text-left ' +
         (selected
-          ? 'border-[var(--color-accent)] bg-[#0d2a1c]'
+          ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]'
           : 'border-[var(--color-border-interactive)] bg-[var(--color-muted)]') +
         (disabled ? ' opacity-45' : '')
       }

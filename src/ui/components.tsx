@@ -6,6 +6,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useTheme } from './theme'
 
 // ── Button ──────────────────────────────────────────────────────────
 export function Button({
@@ -375,5 +376,45 @@ export function PageHeader({
       {status ? <p className="mns-pagehead__status">{status}</p> : null}
       {children}
     </header>
+  )
+}
+
+// ── ThemeToggle ─────────────────────────────────────────────────────
+// One button: shows a moon in light mode, a sun in dark, and a tap pins
+// the opposite theme (remembered — src/ui/theme.ts). Follow-the-phone
+// stays the default until the first tap. The label says what tapping
+// DOES; the icon is aria-hidden so it is never the only signal.
+export function ThemeToggle() {
+  const [choice, setChoice] = useTheme()
+  const [osDark, setOsDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => setOsDark(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  const dark = choice === 'dark' || (choice === 'system' && osDark)
+
+  return (
+    <button
+      type="button"
+      className="mns-theme-toggle"
+      aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      onClick={() => setChoice(dark ? 'light' : 'dark')}
+    >
+      {dark ? (
+        <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41" />
+        </svg>
+      ) : (
+        <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      )}
+    </button>
   )
 }

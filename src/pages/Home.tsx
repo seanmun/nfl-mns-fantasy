@@ -75,7 +75,7 @@ function MockGame({
       className={
         'relative flex-1 flex flex-col rounded-lg border-2 px-2.5 py-2 ' +
         (isPicked
-          ? 'border-[var(--color-accent)] bg-[#0d2a1c]'
+          ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]'
           : 'border-[var(--color-border-interactive)] bg-[var(--color-muted)]')
       }
     >

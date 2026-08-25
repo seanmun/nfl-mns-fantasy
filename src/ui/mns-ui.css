@@ -105,3 +105,8 @@ textarea.mns-input { padding: 0.75rem 1rem; line-height: 1.5; min-height: 6rem; 
 .mns-pagehead__eyebrow { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-accent); margin: 0; }
 .mns-pagehead__title { font-size: 1.7rem; font-weight: 800; line-height: 1.15; margin: 0; text-wrap: balance; }
 .mns-pagehead__status { margin: 0.25rem 0 0; color: var(--color-muted-foreground); }
+
+/* ── ThemeToggle ── */
+.mns-theme-toggle { display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; min-width: 3rem; border-radius: 0.5rem; border: none; background: transparent; color: var(--color-muted-foreground); cursor: pointer; }
+.mns-theme-toggle:hover { color: var(--color-foreground); }
+.mns-theme-toggle:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
