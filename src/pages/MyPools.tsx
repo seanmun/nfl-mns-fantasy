@@ -17,10 +17,24 @@ export function MyPools() {
   // pool's own "My pools" link passes stay:true, so backing out to this
   // list still works.
   const stay = (location.state as { stay?: boolean } | null)?.stay === true
+  // The API returns one row per ENTRY; this page shows one card per
+  // POOL. A second entry is another contestant in the same pool, not
+  // another pool to scan past — it becomes a name on the subtitle.
+  const rows = data?.pools ?? []
+  const byPool = new Map<
+    string,
+    { pool: (typeof rows)[number]['pool']; entries: Array<{ id: string; entryName: string }> }
+  >()
+  for (const { pool, entry } of rows) {
+    const seen = byPool.get(pool.id)
+    if (seen) seen.entries.push(entry)
+    else byPool.set(pool.id, { pool, entries: [entry] })
+  }
+  const pools = [...byPool.values()]
   // Finished pools live in the archive; only ACTIVE pools count toward
   // "you have one pool, go straight in".
-  const activePools = (data?.pools ?? []).filter(({ pool }) => pool.status !== 'completed')
-  const finishedPools = (data?.pools ?? []).filter(({ pool }) => pool.status === 'completed')
+  const activePools = pools.filter(({ pool }) => pool.status !== 'completed')
+  const finishedPools = pools.filter(({ pool }) => pool.status === 'completed')
   const onlyPool = !isLoading && activePools.length === 1 ? activePools[0].pool.id : null
   useEffect(() => {
     if (onlyPool && !stay) navigate(`/pool/${onlyPool}`, { replace: true })
@@ -54,9 +68,9 @@ export function MyPools() {
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {activePools.map(({ pool, entry }) => (
+          {activePools.map(({ pool, entries }) => (
             <li
-              key={entry.id}
+              key={pool.id}
               className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex flex-col gap-3"
             >
               {/* The whole card leads to the pool page — standings,
@@ -64,7 +78,7 @@ export function MyPools() {
               <Link to={`/pool/${pool.id}`} className="block">
                 <b className="block text-[1.1rem] text-[var(--color-accent)]">{pool.name}</b>
                 <span className="text-[0.9rem] text-[var(--color-muted-foreground)]">
-                  {entry.entryName} &middot; {pool.season}
+                  {entries.map((e) => e.entryName).join(' · ')} &middot; {pool.season}
                 </span>
               </Link>
               <div className="flex flex-wrap gap-2">
@@ -125,8 +139,8 @@ export function MyPools() {
             Finished pools
           </h2>
           <ul className="flex flex-col gap-2">
-            {finishedPools.map(({ pool, entry }) => (
-              <li key={entry.id}>
+            {finishedPools.map(({ pool }) => (
+              <li key={pool.id}>
                 <Link
                   to={`/pool/${pool.id}/standings`}
                   className="flex items-baseline justify-between gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3 opacity-80"
