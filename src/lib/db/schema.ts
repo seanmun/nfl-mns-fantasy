@@ -390,11 +390,10 @@ export const nflPoolEntries = nflSchema.table('pool_entries', {
   // in the system for next year; banned are out and cannot rejoin. Both
   // vanish from standings, picks, pulse counts and every email.
   status: text('status').$type<EntryStatus>().notNull().default('active'),
-  // Simple Mode: the 75-year-old's app. When on, this entry's emails
-  // link to /simple/<token> — a one-screen, no-login pick flow. The
-  // token IS the credential (128-bit, unguessable, scoped to exactly
-  // this entry's picks), minted once on first enable and kept on
-  // disable so old emails don't break.
+  // DORMANT — Simple Mode was built and killed same-day 2026-08-25:
+  // the MAIN picks page must be that simple itself; a separate fork
+  // admits defeat. Columns stay so db:push never proposes a
+  // destructive drop; nothing reads or writes them.
   simpleMode: boolean('simple_mode').notNull().default(false),
   simpleToken: text('simple_token').unique(),
   // Survivor. strikes counts losses; isEliminated is a cached read of

@@ -17,7 +17,11 @@ export function MyPools() {
   // pool's own "My pools" link passes stay:true, so backing out to this
   // list still works.
   const stay = (location.state as { stay?: boolean } | null)?.stay === true
-  const onlyPool = !isLoading && data?.pools.length === 1 ? data.pools[0].pool.id : null
+  // Finished pools live in the archive; only ACTIVE pools count toward
+  // "you have one pool, go straight in".
+  const activePools = (data?.pools ?? []).filter(({ pool }) => pool.status !== 'completed')
+  const finishedPools = (data?.pools ?? []).filter(({ pool }) => pool.status === 'completed')
+  const onlyPool = !isLoading && activePools.length === 1 ? activePools[0].pool.id : null
   useEffect(() => {
     if (onlyPool && !stay) navigate(`/pool/${onlyPool}`, { replace: true })
   }, [onlyPool, stay, navigate])
@@ -50,7 +54,7 @@ export function MyPools() {
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {data.pools.map(({ pool, entry }) => (
+          {activePools.map(({ pool, entry }) => (
             <li
               key={entry.id}
               className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex flex-col gap-3"
@@ -113,6 +117,33 @@ export function MyPools() {
           ))}
         </ul>
       )}
+
+      {/* ── Archive: finished pools, out of the way but never gone ── */}
+      {finishedPools.length ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-muted-foreground)]">
+            Finished pools
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {finishedPools.map(({ pool, entry }) => (
+              <li key={entry.id}>
+                <Link
+                  to={`/pool/${pool.id}/standings`}
+                  className="flex items-baseline justify-between gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3 opacity-80"
+                >
+                  <span className="truncate">
+                    <b>{pool.name}</b>
+                    <span className="text-[0.85rem] text-[var(--color-muted-foreground)]">
+                      {' '}· {pool.season} · final standings
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[var(--color-accent)] font-bold">&rsaquo;</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   )
 }

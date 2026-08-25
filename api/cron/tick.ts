@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { isNotNull } from 'drizzle-orm'
+import { and, eq, isNotNull } from 'drizzle-orm'
 import { db } from '../_db.js'
 import { verifyCron } from '../_middleware.js'
-import { nflPoolWeeks } from '../../src/lib/db/schema.js'
+import { nflGames, nflPoolGames, nflPools, nflPoolWeeks, nflWeeks } from '../../src/lib/db/schema.js'
 import { currentWeek, syncTestWeeks, syncWeek } from '../../src/lib/sync/schedule.js'
 import { autofillPoolWeek, duePoolWeeks } from '../../src/lib/scoring/autofill.js'
 import { gradePoolWeek } from '../../src/lib/scoring/rollup.js'
@@ -78,6 +78,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       graded.push(await gradePoolWeek(db, pw.poolId, pw.weekId))
     }
 
+    // ── Archive finished pools ──────────────────────────────────
+    // A pool whose LAST week is fully decided flips to 'completed':
+    // it drops into the archive section of My Pools and stops counting
+    // toward "which pool do I auto-open". Idempotent — already-completed
+    // pools are skipped.
+    const openPools = await db.select().from(nflPools).where(eq(nflPools.status, 'open'))
+    let archived = 0
+    for (const p of openPools) {
+      const [lastWk] = await db
+        .select({ id: nflWeeks.id })
+        .from(nflWeeks)
+        .where(
+          and(
+            eq(nflWeeks.season, p.season),
+            eq(nflWeeks.seasonType, p.seasonType),
+            eq(nflWeeks.week, p.endWeek)
+          )
+        )
+        .limit(1)
+      if (!lastWk) continue
+      const slate = await db
+        .select({ status: nflGames.status, isIncluded: nflPoolGames.isIncluded })
+        .from(nflPoolGames)
+        .innerJoin(nflGames, eq(nflGames.id, nflPoolGames.gameId))
+        .where(and(eq(nflPoolGames.poolId, p.id), eq(nflPoolGames.weekId, lastWk.id)))
+      const included = slate.filter((g) => g.isIncluded)
+      const doneNow =
+        included.length > 0 &&
+        included.every((g) => g.status === 'final' || g.status === 'cancelled')
+      if (doneNow) {
+        await db.update(nflPools).set({ status: 'completed' }).where(eq(nflPools.id, p.id))
+        archived++
+      }
+    }
+
     const problems = graded.flatMap((g) => g.problems)
     const shortfalls = filled.flatMap((f) => f.shortfalls)
     const emailFailures = reminded.flatMap((r) => r.failed)
@@ -98,6 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       autofilled: filled.length,
       picksAssigned: filled.reduce((n, f) => n + f.picksAssigned, 0),
       poolsGraded: graded.length,
+      archived,
       picksGraded: graded.reduce((n, g) => n + g.picksGraded, 0),
       problems,
       shortfalls,

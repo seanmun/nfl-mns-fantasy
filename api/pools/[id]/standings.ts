@@ -13,7 +13,6 @@ import {
   users,
 } from '../../../src/lib/db/schema.js'
 import { rankStandings } from '../../../src/lib/scoring/standings.js'
-import { mintSimpleToken } from '../../simple/[token].js'
 import type { PrizesConfig } from '../../../src/lib/db/schema.js'
 
 // GET /api/pools/:id/standings — the leaderboard.
@@ -65,29 +64,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .set({ status: status as 'active' | 'benched' | 'banned' })
       .where(eq(nflPoolEntries.id, entryId))
     return res.status(200).json({ ok: true })
-  }
-
-  // ── Simple Mode on/off for an entry ─────────────────────────────
-  // POST { entryId, simpleMode } — pool admins (or later, the member
-  // themselves via their own surface). Mints the token once; disable
-  // keeps it so old email links fail soft rather than 404 forever.
-  if (req.method === 'POST' && typeof req.body?.simpleMode === 'boolean') {
-    if (!ctx.isPoolAdmin) {
-      return res.status(403).json({ error: 'Only pool admins can do that.' })
-    }
-    const { entryId, simpleMode } = req.body as { entryId?: string; simpleMode?: boolean }
-    const [target] = await db
-      .select()
-      .from(nflPoolEntries)
-      .where(and(eq(nflPoolEntries.id, entryId ?? ''), eq(nflPoolEntries.poolId, poolId)))
-      .limit(1)
-    if (!target) return res.status(404).json({ error: 'That entry is not in this pool.' })
-    const token = target.simpleToken ?? mintSimpleToken()
-    await db
-      .update(nflPoolEntries)
-      .set({ simpleMode: simpleMode === true, simpleToken: token })
-      .where(eq(nflPoolEntries.id, target.id))
-    return res.status(200).json({ ok: true, simpleMode: simpleMode === true, simpleToken: token })
   }
 
   // ── Grant / revoke co-admin ─────────────────────────────────────
@@ -373,9 +349,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ctx.isPoolAdmin &&
           entry.userId !== ctx.pool.createdBy &&
           entry.userId !== ctx.userId,
-        // Simple Mode state — admin eyes only, like the email.
-        simpleMode: ctx.isPoolAdmin ? entry.simpleMode : false,
-        simpleToken: ctx.isPoolAdmin && entry.simpleMode ? entry.simpleToken : null,
         totalPoints: r.totalPoints,
         keyPickScore: r.keyPickScore,
         strikes: entry.strikes,

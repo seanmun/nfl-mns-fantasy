@@ -269,20 +269,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .filter(Boolean)
 
     const activeEntries = await db
-      .select({
-        userId: nflPoolEntries.userId,
-        simpleMode: nflPoolEntries.simpleMode,
-        simpleToken: nflPoolEntries.simpleToken,
-      })
+      .select({ userId: nflPoolEntries.userId })
       .from(nflPoolEntries)
       .where(and(eq(nflPoolEntries.poolId, pool.id), eq(nflPoolEntries.status, 'active')))
-    // A user with a Simple Mode entry gets that entry's one-tap link.
-    const simpleLinkByUser = new Map<string, string>()
-    for (const e of activeEntries) {
-      if (e.simpleMode && e.simpleToken && !simpleLinkByUser.has(e.userId)) {
-        simpleLinkByUser.set(e.userId, e.simpleToken)
-      }
-    }
     const owners = activeEntries.length
       ? await db
           .select({ id: users.id, email: users.email })
@@ -311,19 +300,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <p>Picks close ${esc(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }))} ET.</p>
 <p><a href="${process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'}/pool/${pool.id}/picks">Make your picks</a></p>`
 
-    const appUrl = process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'
     const messages: Message[] = owners
       .filter((o) => !!o.email)
-      .map((o) => {
-        const t = simpleLinkByUser.get(o.id)
-        const link = t ? `${appUrl}/simple/${t}` : `${appUrl}/pool/${pool.id}/picks`
-        return {
-          to: o.email,
-          subject: `[${pool.name}] ${subject}`,
-          html: htmlBody.replace(/href="[^"]*"/, `href="${link}"`),
-          text: textBody.replace(/Make your picks: \S+/, `Make your picks: ${link}`),
-        }
-      })
+      .map((o) => ({
+        to: o.email,
+        subject: `[${pool.name}] ${subject}`,
+        html: htmlBody,
+        text: textBody,
+      }))
     const sent = await sendAll(messages)
 
     await db.insert(nflPoolAnnouncements).values({

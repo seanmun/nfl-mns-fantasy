@@ -210,9 +210,6 @@ export interface StandingsRow {
   canToggleAdmin: boolean
   // True when the CALLER may bench/ban this row.
   canModerate: boolean
-  // Admin-only Simple Mode state; token present only when enabled.
-  simpleMode: boolean
-  simpleToken: string | null
   weekly: StandingsWeekCell[]
 }
 
@@ -353,13 +350,6 @@ export function createApi(getToken: GetToken) {
           method: 'POST',
           body: JSON.stringify({ action: 'announce', subject, body }),
         }
-      ),
-
-    setSimpleMode: (poolId: string, entryId: string, simpleMode: boolean) =>
-      request<{ ok: true; simpleMode: boolean; simpleToken: string }>(
-        getToken,
-        `/api/pools/${poolId}/standings`,
-        { method: 'POST', body: JSON.stringify({ entryId, simpleMode }) }
       ),
 
     setEntryStatus: (poolId: string, entryId: string, status: 'active' | 'benched' | 'banned') =>

@@ -32,21 +32,6 @@ export function PoolEntriesAdmin() {
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const setSimple = useMutation({
-    mutationFn: ({ entryId, simpleMode }: { entryId: string; simpleMode: boolean }) =>
-      api.setSimpleMode(poolId, entryId, simpleMode),
-    onSuccess: (r) => {
-      if (r.simpleMode) {
-        navigator.clipboard.writeText(`${window.location.origin}/simple/${r.simpleToken}`)
-        toast.success('Simple Mode on — link copied, text it to them')
-      } else {
-        toast.success('Simple Mode off')
-      }
-      qc.invalidateQueries({ queryKey: ['standings', poolId] })
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
   const setAdmin = useMutation({
     mutationFn: ({ entryId, isAdmin }: { entryId: string; isAdmin: boolean }) =>
       api.setPoolAdmin(poolId, entryId, isAdmin),
@@ -122,29 +107,6 @@ export function PoolEntriesAdmin() {
                     className={btn + 'border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]'}
                   >
                     {r.ownerIsAdmin ? 'Remove admin' : 'Make admin'}
-                  </button>
-                ) : null}
-                <button
-                  onClick={() => setSimple.mutate({ entryId: r.entryId, simpleMode: !r.simpleMode })}
-                  disabled={setSimple.isPending}
-                  className={
-                    btn +
-                    (r.simpleMode
-                      ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
-                      : 'border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]')
-                  }
-                >
-                  {r.simpleMode ? 'Simple Mode ✓' : 'Simple Mode'}
-                </button>
-                {r.simpleMode && r.simpleToken ? (
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/simple/${r.simpleToken}`)
-                      toast.success('Simple link copied')
-                    }}
-                    className={btn + 'border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]'}
-                  >
-                    Copy link
                   </button>
                 ) : null}
                 {r.canModerate ? (

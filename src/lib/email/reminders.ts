@@ -174,12 +174,7 @@ export async function sendReminders(
         have: made.length,
         need,
         deadline: poolWeek.pickDeadlineAt!,
-        // Simple Mode entries get their one-tap link — the whole point
-        // is never making them find the app.
-        url:
-          entry.simpleMode && entry.simpleToken
-            ? `${appUrl}/simple/${entry.simpleToken}`
-            : `${appUrl}/pool/${pool.id}/picks`,
+        url: `${appUrl}/pool/${pool.id}/picks`,
       })
     )
   }
