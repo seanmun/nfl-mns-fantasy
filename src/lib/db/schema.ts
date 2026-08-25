@@ -390,6 +390,13 @@ export const nflPoolEntries = nflSchema.table('pool_entries', {
   // in the system for next year; banned are out and cannot rejoin. Both
   // vanish from standings, picks, pulse counts and every email.
   status: text('status').$type<EntryStatus>().notNull().default('active'),
+  // Simple Mode: the 75-year-old's app. When on, this entry's emails
+  // link to /simple/<token> — a one-screen, no-login pick flow. The
+  // token IS the credential (128-bit, unguessable, scoped to exactly
+  // this entry's picks), minted once on first enable and kept on
+  // disable so old emails don't break.
+  simpleMode: boolean('simple_mode').notNull().default(false),
+  simpleToken: text('simple_token').unique(),
   // Survivor. strikes counts losses; isEliminated is a cached read of
   // strikes >= scoringConfig.maxStrikes, written by the grader — never
   // trust it as the source of truth when regrading, recompute from picks.

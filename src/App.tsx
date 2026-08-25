@@ -13,6 +13,7 @@ import { PoolEntriesAdmin } from '@/pages/PoolEntriesAdmin'
 import { PoolMessage } from '@/pages/PoolMessage'
 import { PoolWeekAdmin } from '@/pages/PoolWeekAdmin'
 import { RulesPreview } from '@/pages/RulesPreview'
+import { SimplePicks } from '@/pages/SimplePicks'
 import { NotFound } from '@/pages/NotFound'
 
 // Auth is the platform's, not this app's: one Clerk instance, one
@@ -46,6 +47,17 @@ function AuthPage({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  return (
+    <Routes>
+      {/* Simple Mode lives OUTSIDE the shell: no header, no tabs, no
+          chrome — one screen reached from one email link. */}
+      <Route path="/simple/:token" element={<SimplePicks />} />
+      <Route path="*" element={<Shelled />} />
+    </Routes>
+  )
+}
+
+function Shelled() {
   return (
     <AppShell>
       <Routes>

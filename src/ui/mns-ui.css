@@ -1,0 +1,107 @@
+/* AUTO-SYNCED from mns-ui — do not edit here. Edit mns-ui/src/mns-ui.css and run sync.sh. */
+/* ═══════════════════════════════════════════════════════════════════
+   mns-ui component styles. Plain CSS on the tokens — no Tailwind
+   dependency, so every app compiles them identically regardless of
+   its Tailwind version. Accessibility is enforced HERE: tap targets,
+   focus rings, and state-words-not-just-color are component law.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.mns { font-size: 1.125rem; } /* 18px base wrapper for member surfaces */
+
+/* ── Button ── */
+.mns-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  min-height: 3rem; padding: 0 1.25rem; border-radius: 0.5rem;
+  font-weight: 800; font-size: 1rem; cursor: pointer;
+  border: 2px solid transparent; text-decoration: none;
+  background: var(--color-accent); color: var(--color-accent-foreground);
+}
+.mns-btn--quiet { background: transparent; color: var(--color-foreground); border-color: var(--color-border-interactive); font-weight: 700; }
+.mns-btn--danger { background: transparent; color: var(--color-pick-loss); border-color: var(--color-pick-loss); font-weight: 700; }
+.mns-btn--ghost { background: transparent; color: var(--color-muted-foreground); border-color: transparent; font-weight: 700; }
+.mns-btn--full { display: flex; width: 100%; }
+.mns-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mns-btn:focus-visible, .mns-input:focus-visible, .mns-tab:focus-visible, .mns-stepper button:focus-visible {
+  outline: 3px solid var(--color-accent); outline-offset: 2px;
+}
+
+/* ── Card ── */
+.mns-card { background: var(--color-card); border: 1px solid var(--color-border); border-radius: 0.75rem; padding: 1rem; }
+.mns-card--hero { border-left: 4px solid var(--color-accent); }
+.mns-card--admin { border-color: var(--color-key); }
+
+/* ── ListRow ── */
+.mns-row { display: flex; align-items: center; gap: 0.75rem; background: var(--color-card); border: 1px solid var(--color-border); border-radius: 0.5rem; padding: 0.6rem 0.75rem; }
+.mns-row--mine { border-color: var(--color-accent); }
+.mns-row__lead { flex-shrink: 0; font-weight: 800; font-size: 1.2rem; min-width: 2.25rem; text-align: center; font-variant-numeric: tabular-nums; }
+.mns-row__body { flex: 1; min-width: 0; }
+.mns-row__title { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mns-row__sub { display: block; font-size: 0.8rem; color: var(--color-muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mns-row__end { flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Chip / Badge ── */
+.mns-chip { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--color-muted); color: var(--color-muted-foreground); }
+.mns-chip--accent { background: var(--color-accent-soft); color: var(--color-accent); }
+.mns-chip--key { color: var(--color-key); background: transparent; }
+.mns-chip--loss { color: var(--color-pick-loss); background: transparent; }
+.mns-chip--win { color: var(--color-pick-win); background: transparent; }
+
+/* ── Field ── */
+.mns-field { display: flex; flex-direction: column; gap: 0.4rem; }
+.mns-field__label { font-weight: 700; }
+.mns-field__hint { font-size: 0.85rem; color: var(--color-muted-foreground); margin-top: -0.25rem; }
+.mns-input {
+  min-height: 3rem; padding: 0 1rem; border-radius: 0.5rem; font-size: 1rem;
+  background: var(--color-muted); color: var(--color-foreground);
+  border: 2px solid var(--color-border-interactive);
+}
+textarea.mns-input { padding: 0.75rem 1rem; line-height: 1.5; min-height: 6rem; }
+
+/* ── Banner ── */
+.mns-banner { border-left: 4px solid var(--color-accent); background: var(--color-card); border-radius: 0 0.5rem 0.5rem 0; padding: 0.75rem 1rem; font-weight: 600; }
+.mns-banner--warn { border-left-color: var(--color-key); }
+.mns-banner--crit { border-left-color: var(--color-pick-loss); }
+.mns-banner--ok { border-left-color: var(--color-pick-win); }
+
+/* ── StatTile ── */
+.mns-tile { display: flex; flex-direction: column; gap: 0.15rem; background: var(--color-card); border: 1px solid var(--color-border); border-radius: 0.75rem; padding: 0.8rem; text-decoration: none; color: inherit; }
+.mns-tile__label { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-muted-foreground); }
+.mns-tile__value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.mns-tile__sub { font-size: 0.78rem; color: var(--color-muted-foreground); }
+
+/* ── EmptyState ── */
+.mns-empty { text-align: center; padding: 2.5rem 1rem; color: var(--color-muted-foreground); }
+.mns-empty__title { font-weight: 800; font-size: 1.05rem; color: var(--color-foreground); margin-bottom: 0.3rem; }
+
+/* ── Skeleton ── */
+.mns-skel { border-radius: 0.5rem; background: linear-gradient(90deg, var(--color-muted) 25%, var(--color-border) 50%, var(--color-muted) 75%); background-size: 200% 100%; animation: mns-shimmer 1.4s infinite linear; min-height: 1rem; }
+@keyframes mns-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .mns-skel { animation: none; } }
+
+/* ── BottomTabBar ── */
+.mns-tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; background: var(--color-card); border-top: 2px solid var(--color-border-interactive); padding-bottom: env(safe-area-inset-bottom); }
+.mns-tab { flex: 1; min-height: 3.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted-foreground); text-decoration: none; border-top: 2px solid transparent; margin-top: -2px; }
+.mns-tab--active { color: var(--color-accent); border-top-color: var(--color-accent); }
+.mns-tab__icon { font-size: 1.1rem; line-height: 1; }
+
+/* ── Stepper (half-point) ── */
+.mns-stepper { display: inline-flex; align-items: center; gap: 0.25rem; }
+.mns-stepper button { min-height: 3rem; min-width: 3rem; border-radius: 0.5rem; border: 2px solid var(--color-border-interactive); background: transparent; color: var(--color-foreground); font-weight: 900; font-size: 1.2rem; cursor: pointer; }
+.mns-stepper button:disabled { opacity: 0.4; cursor: not-allowed; }
+.mns-stepper__value { min-width: 5rem; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.mns-stepper__off { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted-foreground); font-weight: 800; }
+
+/* ── Countdown ── */
+.mns-countdown { font-variant-numeric: tabular-nums; font-weight: 700; }
+.mns-countdown--urgent { color: var(--color-pick-loss); }
+
+/* ── ConfirmPanel ── */
+.mns-confirm { border: 2px solid var(--color-key); background: var(--color-card); border-radius: 0.75rem; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.mns-confirm__actions { display: flex; gap: 0.5rem; }
+
+/* ── PageHeader ── */
+.mns-pagehead { padding: 1.5rem 0 1rem; }
+.mns-pagehead__back { display: inline-flex; align-items: center; min-height: 3rem; font-weight: 700; color: var(--color-accent); text-decoration: none; }
+.mns-pagehead__eyebrow { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-accent); margin: 0; }
+.mns-pagehead__title { font-size: 1.7rem; font-weight: 800; line-height: 1.15; margin: 0; text-wrap: balance; }
+.mns-pagehead__status { margin: 0.25rem 0 0; color: var(--color-muted-foreground); }
