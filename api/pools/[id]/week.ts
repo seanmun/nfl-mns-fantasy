@@ -206,17 +206,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // The deadline is FROZEN at first publish. A re-publish only fills
     // off-the-board lines; moving the cutoff under members who planned
     // around it is not on the table.
-    const deadline = republish
+    let deadline = republish
       ? ensuredPoolWeek.pickDeadlineAt
       : pickDeadlineAt
         ? new Date(pickDeadlineAt)
         : computeDeadline(pool.deadlineAnchor, pool.deadlineOffsetMinutes, kickoffs)
 
-    if (!deadline) {
-      return res.status(400).json({
-        error:
-          'No kickoff matches this pool’s deadline rule this week, so the deadline has to be set by hand.',
-      })
+    // A late publish must yield a WORKING week, never a dead one. If the
+    // anchored deadline is already behind us (the admin published after
+    // the anchor kickoff — the exact panic moment), fall back to the
+    // last unplayed kickoff: the week opens, each game still locks at
+    // its own kickoff, and only already-started games are lost. If every
+    // game has started, the week publishes locked — honestly, not
+    // accidentally.
+    const now2 = new Date()
+    if (!deadline || deadline <= now2) {
+      const unplayed = kickoffs.filter((k) => !isTbdKickoff(k) && now2 < k)
+      deadline = unplayed.length
+        ? new Date(Math.max(...unplayed.map((k) => k.getTime())))
+        : deadline ?? now2
     }
 
     await db
