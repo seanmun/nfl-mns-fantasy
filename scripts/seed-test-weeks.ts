@@ -32,13 +32,17 @@ const SEASON = Number(process.env.NFL_SEASON) || 2026
 // Which real preseason games go in which test week. Identified by the
 // pairing rather than by ESPN id so this reads as the plan does.
 const PLAN: Array<{ week: number; label: string; games: string[] }> = [
-  { week: 1, label: 'Test Week 1', games: ['LV@HOU', 'SF@LAC'] },          // Thu Aug 20
-  { week: 2, label: 'Test Week 2', games: ['NYJ@PIT', 'CAR@JAX', 'GB@DEN'] }, // Fri Aug 21
-  { week: 3, label: 'Test Week 3', games: ['WSH@DET', 'BUF@CLE', 'ATL@IND'] }, // Sat Aug 22
+  { week: 1, label: 'Test Week 1', games: ['PIT@BUF', 'NE@CLE', 'SF@LV', 'LAR@LAC'] }, // Thu Aug 27
+  {
+    week: 2,
+    label: 'Test Week 2',
+    games: ['WSH@BAL', 'ATL@MIA', 'HOU@CAR', 'NYG@NYJ', 'TB@JAX', 'NO@DAL', 'ARI@GB', 'SEA@KC', 'CIN@PHI', 'MIN@DEN'],
+  }, // Fri Aug 28
+  { week: 3, label: 'Test Week 3', games: ['DET@IND', 'CHI@TEN'] }, // Sat Aug 29
 ]
 
 // ESPN preseason week holding this slate.
-const ESPN_PRESEASON_WEEK = 3
+const ESPN_PRESEASON_WEEK = 4
 
 async function main() {
   const teams = await db.select().from(nflTeams)

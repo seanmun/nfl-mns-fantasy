@@ -80,11 +80,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .limit(1)
     } else if (poolId) {
       ;[pool] = await db.select().from(nflPools).where(eq(nflPools.id, poolId)).limit(1)
-      // A pool id alone only works for public pools — otherwise anyone
-      // with a guessed id could walk into a private pool.
-      if (pool && !pool.isPublic) {
-        return res.status(403).json({ error: 'That pool is private. You need an invite.' })
-      }
     } else {
       return res.status(400).json({ error: 'No pool code or invite given.' })
     }
@@ -92,22 +87,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!pool) return res.status(404).json({ error: 'No pool matches that code.' })
     if (pool.status === 'cancelled') {
       return res.status(403).json({ error: 'That pool has been cancelled.' })
-    }
-
-    // ── Late join ────────────────────────────────────────────────
-    // Entries stay open until the FIRST PICK LOCK — the earliest pick
-    // deadline the pool has committed to — not the first kickoff. A
-    // pool with nothing published yet is always open.
-    if (!pool.allowLateJoin) {
-      const [firstDeadline] = await db
-        .select({ deadline: nflPoolWeeks.pickDeadlineAt })
-        .from(nflPoolWeeks)
-        .where(and(eq(nflPoolWeeks.poolId, pool.id), isNotNull(nflPoolWeeks.pickDeadlineAt)))
-        .orderBy(asc(nflPoolWeeks.pickDeadlineAt))
-        .limit(1)
-      if (firstDeadline?.deadline && new Date() >= firstDeadline.deadline) {
-        return res.status(403).json({ error: 'This pool has already started and is closed to new entries.' })
-      }
     }
 
     // ── Membership ───────────────────────────────────────────────
@@ -121,6 +100,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: 'You have been removed from this pool by the manager.' })
     }
 
+    // A pool id alone only works for public pools — otherwise anyone with
+    // a guessed id could walk into a private pool. Members are exempt: an
+    // "add entry" from inside the pool arrives as a bare id, and someone
+    // already in the pool is not the stranger this guards against.
+    if (poolId && !inviteToken && !joinCode && !pool.isPublic && mine.length === 0) {
+      return res.status(403).json({ error: 'That pool is private. You need an invite.' })
+    }
+
     // An entry is a season-long CONTESTANT, and it is created in exactly
     // two deliberate moments: first join, or an explicit "add another
     // entry". A member re-tapping an invite link, revisiting /join, or
@@ -129,6 +116,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // split across two leaderboard rows.
     if (mine.length > 0 && !addEntry) {
       return res.status(200).json({ pool, entry: { id: mine[0].id }, alreadyMember: true })
+    }
+
+    // ── Late join ────────────────────────────────────────────────
+    // Entries stay open until the FIRST PICK LOCK — the earliest pick
+    // deadline the pool has committed to — not the first kickoff. A
+    // pool with nothing published yet is always open. Checked only once
+    // we know a NEW entry is being created — an existing member landing
+    // back in their pool is not a late join.
+    if (!pool.allowLateJoin) {
+      const [firstDeadline] = await db
+        .select({ deadline: nflPoolWeeks.pickDeadlineAt })
+        .from(nflPoolWeeks)
+        .where(and(eq(nflPoolWeeks.poolId, pool.id), isNotNull(nflPoolWeeks.pickDeadlineAt)))
+        .orderBy(asc(nflPoolWeeks.pickDeadlineAt))
+        .limit(1)
+      if (firstDeadline?.deadline && new Date() >= firstDeadline.deadline) {
+        return res.status(403).json({ error: 'This pool has already started and is closed to new entries.' })
+      }
     }
 
     // ── Caps ─────────────────────────────────────────────────────
