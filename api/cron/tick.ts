@@ -104,9 +104,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .innerJoin(nflGames, eq(nflGames.id, nflPoolGames.gameId))
         .where(and(eq(nflPoolGames.poolId, p.id), eq(nflPoolGames.weekId, lastWk.id)))
       const included = slate.filter((g) => g.isIncluded)
-      const doneNow =
+      let doneNow =
         included.length > 0 &&
         included.every((g) => g.status === 'final' || g.status === 'cancelled')
+      // Fallback: a pool that will never reach its configured end week
+      // (sim pools, abandoned seasons) still archives once every game
+      // it EVER put in play is decided and its whole week range is in
+      // the past. A mid-season pool never trips this — its later weeks'
+      // kickoffs are still ahead.
+      if (!doneNow) {
+        const allSlate = await db
+          .select({ status: nflGames.status, isIncluded: nflPoolGames.isIncluded })
+          .from(nflPoolGames)
+          .innerJoin(nflGames, eq(nflGames.id, nflPoolGames.gameId))
+          .where(eq(nflPoolGames.poolId, p.id))
+        const everIncluded = allSlate.filter((g) => g.isIncluded)
+        const rangeWeeks = await db
+          .select({ last: nflWeeks.lastKickoffAt })
+          .from(nflWeeks)
+          .where(and(eq(nflWeeks.season, p.season), eq(nflWeeks.seasonType, p.seasonType)))
+        const rangeOver = rangeWeeks.every((w) => !w.last || w.last < now)
+        doneNow =
+          rangeOver &&
+          everIncluded.length > 0 &&
+          everIncluded.every((g) => g.status === 'final' || g.status === 'cancelled')
+      }
       if (doneNow) {
         await db.update(nflPools).set({ status: 'completed' }).where(eq(nflPools.id, p.id))
         archived++
