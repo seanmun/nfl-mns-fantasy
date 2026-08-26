@@ -7,6 +7,7 @@ import { currentWeek, syncTestWeeks, syncWeek } from '../../src/lib/sync/schedul
 import { autofillPoolWeek, duePoolWeeks } from '../../src/lib/scoring/autofill.js'
 import { gradePoolWeek } from '../../src/lib/scoring/rollup.js'
 import { dueForReminder, sendReminders } from '../../src/lib/email/reminders.js'
+import { dueForResults, sendResultsEmails } from '../../src/lib/email/results.js'
 import type { SeasonTypeKey } from '../_espn.js'
 
 // The hourly heartbeat. One ESPN call, then everything that follows from
@@ -76,6 +77,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const graded = []
     for (const pw of publishedWeeks) {
       graded.push(await gradePoolWeek(db, pw.poolId, pw.weekId))
+    }
+
+    // ── Week results email ──────────────────────────────────────
+    // After grading, so a week decided this hour goes out with its
+    // final numbers. dueForResults enforces morning-after Eastern and
+    // the results_email_sent_at stamp makes it once-per-week.
+    const resultsDue = await dueForResults(db, now)
+    const resultsSent = []
+    for (const r of resultsDue) {
+      resultsSent.push(await sendResultsEmails(db, r.poolWeek.id, appUrl))
     }
 
     // ── Archive finished pools ──────────────────────────────────
@@ -151,6 +162,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sync,
       testSynced,
       remindersSent: reminded.reduce((n, r) => n + r.sent, 0),
+      resultsEmailsSent: resultsSent.reduce((n, r) => n + r.sent, 0),
+      resultsEmailFailures: resultsSent.flatMap((r) => r.failed),
       emailFailures,
       autofilled: filled.length,
       picksAssigned: filled.reduce((n, f) => n + f.picksAssigned, 0),

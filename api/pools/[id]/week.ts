@@ -15,6 +15,14 @@ import {
   users,
 } from '../../../src/lib/db/schema.js'
 import { esc, sendAll, type Message } from '../../_email.js'
+import {
+  emailCard,
+  emailNote,
+  emailRow,
+  emailSection,
+  emailShell,
+  fmtSpread,
+} from '../../_emailTemplate.js'
 import { computeDeadline, isTbdKickoff } from '../../../src/lib/scoring/deadline.js'
 import { currentWeek } from '../../../src/lib/sync/schedule.js'
 
@@ -290,22 +298,72 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const subject = republish
       ? `${week.label} lines updated`
       : `${week.label} lines are out — picks are open`
+    const appUrl = process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'
+    const deadlineEt = `${deadline.toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })} ET`
     const textBody = [
       note,
       note ? '' : null,
       `${week.label} lines:`,
       ...linesList.map((l) => `  ${l}`),
       '',
-      `Picks close ${deadline.toLocaleString('en-US', { timeZone: 'America/New_York' })} ET.`,
-      `Make your picks: ${process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'}/pool/${pool.id}/picks`,
+      `Picks close ${deadlineEt}.`,
+      `Make your picks: ${appUrl}/pool/${pool.id}/picks`,
     ]
       .filter((x): x is string => x != null)
       .join('\n')
-    const htmlBody = `${note ? `<p>${esc(note).replace(/\n/g, '<br />')}</p>` : ''}
-<p><b>${esc(week.label)} lines:</b></p>
-<p>${linesList.map((l) => esc(l)).join('<br />')}</p>
-<p>Picks close ${esc(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }))} ET.</p>
-<p><a href="${process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'}/pool/${pool.id}/picks">Make your picks</a></p>`
+
+    const kickEt = (d: Date) =>
+      d.toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        weekday: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    const sortedIncluded = included
+      .slice()
+      .sort(
+        (a, b) =>
+          (gameById.get(a.gameId)?.kickoffAt.getTime() ?? 0) -
+          (gameById.get(b.gameId)?.kickoffAt.getTime() ?? 0)
+      )
+    const lineRows = sortedIncluded
+      .map((r, i) => {
+        const g = gameById.get(r.gameId)
+        if (!g) return ''
+        const home = nick.get(g.homeTeamId) ?? g.homeTeamId
+        const away = nick.get(g.awayTeamId) ?? g.awayTeamId
+        return emailRow({
+          title: `${esc(away)} at ${esc(home)}`,
+          sub: kickEt(g.kickoffAt),
+          value: pool.spreadMode === 'ats' ? (r.spread == null ? 'OFF' : fmtSpread(r.spread)) : undefined,
+          caption:
+            pool.spreadMode === 'ats' ? (r.spread == null ? 'the board' : home) : undefined,
+          last: i === sortedIncluded.length - 1,
+        })
+      })
+      .join('')
+    const htmlBody = emailShell({
+      preheader: `${week.label} lines — picks close ${deadlineEt}.`,
+      heading: republish ? `${esc(week.label)} lines updated` : `${esc(week.label)} lines are out`,
+      subheading: esc(pool.name),
+      bodyHtml:
+        (note ? emailNote(esc(note).replace(/\n/g, '<br />')) : '') +
+        emailSection('The lines') +
+        emailCard(lineRows) +
+        emailNote(
+          `${pool.spreadMode === 'ats' ? `The number is the <b style="color:#f0f4f8">home team's</b> line. ` : ''}Picks close <b style="color:#f0f4f8">${esc(deadlineEt)}</b> — early games lock at kickoff.`
+        ),
+      ctaLabel: 'Make your picks',
+      ctaUrl: `${appUrl}/pool/${pool.id}/picks`,
+      footerLine: `You're in ${esc(pool.name)} on nfl.mnsfantasy.com.`,
+    })
 
     const messages: Message[] = owners
       .filter((o) => !!o.email)

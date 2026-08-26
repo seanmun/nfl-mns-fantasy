@@ -3,6 +3,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../_db.js'
 import { applyCors, loadCtx, requirePoolAdmin } from '../../_pool.js'
 import { esc, sendAll, type Message } from '../../_email.js'
+import { emailCard, emailShell } from '../../_emailTemplate.js'
 import { sendReminders } from '../../../src/lib/email/reminders.js'
 import { currentWeek } from '../../../src/lib/sync/schedule.js'
 import {
@@ -83,8 +84,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .map((id) => ownerById.get(id))
       .filter((o): o is NonNullable<typeof o> => !!o && !!o.email)
 
-    const html = `<p>${esc(body).replace(/\n/g, '<br />')}</p>
-<p style="color:#888;font-size:12px">From the manager of ${esc(pool.name)} on MNS Fantasy NFL.</p>`
+    const appUrl = process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'
+    const html = emailShell({
+      preheader: body.slice(0, 120),
+      heading: esc(subject),
+      subheading: `A message from the manager of ${esc(pool.name)}`,
+      bodyHtml: emailCard(
+        `<tr><td style="padding: 16px;">
+          <p style="color:#f0f4f8;font-family:Arial,sans-serif;font-size:15px;line-height:1.7;margin:0;">${esc(body).replace(/\n/g, '<br />')}</p>
+        </td></tr>`
+      ),
+      ctaLabel: 'Open the pool',
+      ctaUrl: `${appUrl}/pool/${pool.id}`,
+      footerLine: `Sent by the manager of ${esc(pool.name)} on nfl.mnsfantasy.com.`,
+    })
     const messages: Message[] = recipients.map((r) => ({
       to: r.email,
       subject: `[${pool.name}] ${subject}`,

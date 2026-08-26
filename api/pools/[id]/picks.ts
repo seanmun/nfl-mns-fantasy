@@ -18,6 +18,16 @@ import { isPickable, isTbdKickoff } from '../../../src/lib/scoring/deadline.js'
 import { currentWeek } from '../../../src/lib/sync/schedule.js'
 import { validatePicks, type ProposedPick } from '../../../src/lib/picks/validate.js'
 import type { PickNScoring } from '../../../src/lib/scoring/config.js'
+import { esc, sendAll } from '../../_email.js'
+import {
+  emailCard,
+  emailColors,
+  emailNote,
+  emailRow,
+  emailSection,
+  emailShell,
+  fmtSpread,
+} from '../../_emailTemplate.js'
 
 // GET /api/pools/:id/picks?week=3   — the slate, plus this user's picks
 // PUT /api/pools/:id/picks          — save one entry's picks for a week
@@ -376,7 +386,96 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         target: [nflEntryWeeks.entryId, nflEntryWeeks.weekId],
         set: { submittedAt: now },
       })
-    return res.status(200).json({ ok: true, submittedAt: now.toISOString() })
+
+    // Confirmation email: the picks as the app recorded them, to the
+    // person who just hit Submit. Best-effort — a mail hiccup must
+    // never turn a successful submit into an error, so failures are
+    // logged and the response still succeeds.
+    let emailed = false
+    try {
+      const [owner] = await db.select().from(users).where(eq(users.id, ctx.userId)).limit(1)
+      const entryName = ctx.entries.find((e) => e.id === entryId)?.entryName ?? 'Your entry'
+      if (owner?.email) {
+        const appUrl = process.env.VITE_APP_URL || 'https://nfl.mnsfantasy.com'
+        const ats = pool.spreadMode === 'ats'
+        const ordered = mine.slice().sort((a, b) => {
+          const ka = slateRows.find((g) => g.gameId === a.gameId)?.kickoffAt.getTime() ?? 0
+          const kb = slateRows.find((g) => g.gameId === b.gameId)?.kickoffAt.getTime() ?? 0
+          return ka - kb
+        })
+        const rows = ordered
+          .map((p, i) => {
+            const g = slateRows.find((s) => s.gameId === p.gameId)
+            const my = teamById.get(p.selectedTeamId)?.nickname ?? p.selectedTeamId
+            const opp = g
+              ? p.selectedTeamId === g.homeTeamId
+                ? `vs ${teamById.get(g.awayTeamId)?.nickname ?? ''}`
+                : `at ${teamById.get(g.homeTeamId)?.nickname ?? ''}`
+              : ''
+            const line =
+              ats && p.lineSpreadAtPick != null && g
+                ? fmtSpread(
+                    p.selectedTeamId === g.homeTeamId ? p.lineSpreadAtPick : -p.lineSpreadAtPick
+                  )
+                : undefined
+            return emailRow({
+              title: `${esc(my)}${p.isKeyPick ? ` <span style="color:${emailColors.AMBER};">★ KEY</span>` : ''}`,
+              sub: esc(opp),
+              value: line,
+              caption: line ? 'your line' : undefined,
+              last: i === ordered.length - 1,
+            })
+          })
+          .join('')
+        const deadlineEt = deadline
+          ? `${deadline.toLocaleString('en-US', {
+              timeZone: 'America/New_York',
+              weekday: 'long',
+              hour: 'numeric',
+              minute: '2-digit',
+            })} ET`
+          : null
+        const textLines = [
+          `${entryName} — ${week.label} picks are in:`,
+          ...ordered.map((p) => {
+            const my = teamById.get(p.selectedTeamId)?.nickname ?? p.selectedTeamId
+            return `  ${my}${p.isKeyPick ? ' (KEY)' : ''}`
+          }),
+          '',
+          deadlineEt ? `You can change them until ${deadlineEt} — just resubmit.` : '',
+          `${appUrl}/pool/${pool.id}/picks`,
+        ].filter(Boolean)
+        const sent = await sendAll([
+          {
+            to: owner.email,
+            subject: `[${pool.name}] ${entryName}: ${week.label} picks are in`,
+            html: emailShell({
+              preheader: `${mine.length} picks submitted for ${week.label}.`,
+              heading: `&#10003; ${esc(week.label)} picks are in`,
+              subheading: `${esc(entryName)} · ${esc(pool.name)}`,
+              bodyHtml:
+                emailSection('Your picks') +
+                emailCard(rows) +
+                emailNote(
+                  deadlineEt
+                    ? `Change your mind any time before <b style="color:#f0f4f8">${esc(deadlineEt)}</b> — just resubmit after.`
+                    : 'You can change picks until the deadline — just resubmit after.'
+                ),
+              ctaLabel: 'View / change picks',
+              ctaUrl: `${appUrl}/pool/${pool.id}/picks`,
+              footerLine: `You're in ${esc(pool.name)} on nfl.mnsfantasy.com.`,
+            }),
+            text: textLines.join('\n'),
+          },
+        ])
+        emailed = sent.sent === 1
+        if (sent.failed.length) console.error('submit confirmation failed:', sent.failed)
+      }
+    } catch (err) {
+      console.error('submit confirmation email error:', err)
+    }
+
+    return res.status(200).json({ ok: true, submittedAt: now.toISOString(), emailed })
   }
 
   // ── Rename an entry ─────────────────────────────────────────────

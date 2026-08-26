@@ -311,6 +311,9 @@ export const nflPoolWeeks = nflSchema.table('pool_weeks', {
   // safe to fire twice; without this a retry would assign a second set
   // of random picks on top of the first.
   autoPicksAppliedAt: timestamp('auto_picks_applied_at', { withTimezone: true }),
+  // Same idea for the week-results email, sent the morning after the
+  // week's last game goes final.
+  resultsEmailSentAt: timestamp('results_email_sent_at', { withTimezone: true }),
   // Same idea for the pre-deadline nudge. The tick runs hourly, so
   // without a stamp every member short of picks would be emailed once an
   // hour from the reminder window until the deadline.
