@@ -45,17 +45,21 @@ function WinnersBlock({
   )
 }
 
-// Season-end tab 2: the same rows re-ranked by the key-pick score.
-// Competition ranking again — level entries share, the next skips.
-function rankByKey(rows: StandingsRow[]): StandingsRow[] {
+// Re-rank the same rows by any metric — a sort is a VIEW; the pool's
+// real rank is the points order the server sent. Competition ranking
+// again: level entries share, the next skips.
+function rankBy(
+  rows: StandingsRow[],
+  primary: (r: StandingsRow) => number,
+  secondary: (r: StandingsRow) => number
+): StandingsRow[] {
   const sorted = [...rows].sort(
-    (a, b) => b.keyPickScore - a.keyPickScore || b.totalPoints - a.totalPoints
+    (a, b) => primary(b) - primary(a) || secondary(b) - secondary(a)
   )
   let rank = 0
   return sorted.map((row, i) => {
     const prev = sorted[i - 1]
-    const tied =
-      prev && prev.keyPickScore === row.keyPickScore && prev.totalPoints === row.totalPoints
+    const tied = prev && primary(prev) === primary(row) && secondary(prev) === secondary(row)
     if (!tied) rank = i + 1
     return { ...row, rank }
   })
@@ -69,7 +73,7 @@ export function PoolStandings() {
   const { getToken } = useAuth()
   const api = useMemo(() => createApi(getToken), [getToken])
 
-  const [tab, setTab] = useState<'points' | 'key'>('points')
+  const [sort, setSort] = useState<'points' | 'key' | 'lastWeek'>('points')
   const { data, isLoading, error } = useQuery({
     queryKey: ['standings', poolId],
     queryFn: () => api.getStandings(poolId),
@@ -96,7 +100,19 @@ export function PoolStandings() {
   }
 
   const graded = data.rows.some((r) => r.weekly.some((w) => w.points != null))
-  const rows = data.final && tab === 'key' ? rankByKey(data.rows) : data.rows
+  // "Last week" = the latest week ANY row has graded points for.
+  const gradedWeeks = data.rows.flatMap((r) =>
+    r.weekly.filter((w) => w.points != null).map((w) => w.week)
+  )
+  const lastWk = gradedWeeks.length ? Math.max(...gradedWeeks) : null
+  const lwPoints = (r: StandingsRow) =>
+    r.weekly.find((w) => w.week === lastWk)?.points ?? 0
+  const rows =
+    sort === 'key'
+      ? rankBy(data.rows, (r) => r.keyPickScore, (r) => r.totalPoints)
+      : sort === 'lastWeek'
+        ? rankBy(data.rows, lwPoints, (r) => r.totalPoints)
+        : data.rows
   const champions = data.final ? data.rows.filter((r) => r.rank === 1) : []
 
   return (
@@ -176,22 +192,24 @@ export function PoolStandings() {
         </Card>
       ) : null}
 
-      {data.final ? (
-        <div className="flex gap-2" role="tablist" aria-label="Final rankings">
+      {graded ? (
+        // Sort control — a VIEW of the same list, never a second page.
+        // Points is the default and the pool's true ranking.
+        <div className="flex gap-2" role="group" aria-label="Sort standings by">
           {(
             [
-              ['points', 'Season points'],
-              ['key', 'Key picks ★'],
+              ['points', 'Points'],
+              ['key', 'Key ★'],
+              ['lastWeek', 'Last week'],
             ] as const
           ).map(([key, label]) => (
             <button
               key={key}
-              role="tab"
-              aria-selected={tab === key}
-              onClick={() => setTab(key)}
+              aria-pressed={sort === key}
+              onClick={() => setSort(key)}
               className={
                 'flex-1 min-h-[var(--tap-target-min)] rounded-lg border-2 font-bold ' +
-                (tab === key
+                (sort === key
                   ? 'bg-[var(--color-foreground)] text-[var(--color-background)] border-[var(--color-foreground)]'
                   : 'border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]')
               }
@@ -246,6 +264,25 @@ export function PoolStandings() {
             const w = r.weekly.reduce((n, x) => n + x.correct, 0)
             const l = r.weekly.reduce((n, x) => n + x.incorrect, 0)
             const pp = r.weekly.reduce((n, x) => n + x.push, 0)
+            // Big number = whatever the list is sorted by; the other two
+            // metrics ride the sub-line so all three are always visible.
+            const big =
+              sort === 'key' ? r.keyPickScore : sort === 'lastWeek' ? lwPoints(r) : r.totalPoints
+            const rest =
+              sort === 'key' ? (
+                <>
+                  {r.totalPoints} pts · wk {lwPoints(r)}
+                </>
+              ) : sort === 'lastWeek' ? (
+                <>
+                  {r.totalPoints} pts · <span className="text-[var(--color-key)]">★{r.keyPickScore}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-[var(--color-key)]">★{r.keyPickScore}</span> · wk{' '}
+                  {lwPoints(r)} · {w}-{l}-{pp}
+                </>
+              )
             return (
               <li key={r.entryId}>
                 <ListRow
@@ -274,9 +311,9 @@ export function PoolStandings() {
                   sub={r.ownerName ?? ''}
                   end={
                     <span>
-                      <b className="block text-[1.2rem] leading-tight">{r.totalPoints}</b>
+                      <b className="block text-[1.2rem] leading-tight">{big}</b>
                       <span className="block text-[0.78rem] text-[var(--color-muted-foreground)]">
-                        <span className="text-[var(--color-key)]">★{r.keyPickScore}</span> · {w}-{l}-{pp}
+                        {rest}
                       </span>
                     </span>
                   }
