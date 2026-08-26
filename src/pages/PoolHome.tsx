@@ -13,6 +13,16 @@ import {
 import { kickoffLabel } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
+import {
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  PageHeader,
+  Skeleton,
+  StatTile,
+} from '@/ui/components'
 
 // The pool's front door. One hero per entry carries the week's answer —
 // pick, locked in, live, graded — with the entry's rank riding on it.
@@ -64,16 +74,19 @@ export function PoolHome() {
   })
 
   if (isLoading) {
-    return <p className="px-4 py-12 text-[var(--color-muted-foreground)]">Loading&hellip;</p>
+    return (
+      <div className="max-w-xl mx-auto w-full px-4 py-6 flex flex-col gap-3">
+        <Skeleton h="2.2rem" w="70%" />
+        <Skeleton h="9rem" />
+        <Skeleton h="5rem" />
+      </div>
+    )
   }
   if (error || !data) {
     return (
-      <div className="px-4 py-12">
-        <h1 className="text-[1.3rem] font-bold mb-2">Something went wrong</h1>
-        <p className="text-[var(--color-muted-foreground)]">
-          {(error as Error)?.message ?? 'Could not load this pool.'}
-        </p>
-      </div>
+      <EmptyState title="Something went wrong">
+        {(error as Error)?.message ?? 'Could not load this pool.'}
+      </EmptyState>
     )
   }
 
@@ -110,42 +123,25 @@ export function PoolHome() {
   return (
     <div className="max-w-xl mx-auto w-full px-4 py-6 pb-28 flex flex-col gap-4">
       {/* ── Header: title once, week once, state once ── */}
-      <div>
-        <Link
-          to="/"
-          state={{ stay: true }}
-          className="inline-flex items-center min-h-[var(--tap-target-min)] font-bold text-[var(--color-accent)]"
-        >
-          &larr; My pools
-        </Link>
-        <h1 className="text-[1.7rem] font-extrabold leading-tight text-balance">
-          {data.pool.name}
-        </h1>
-        <p className="mt-1 text-[1.05rem]">
-          <span className="font-bold text-[var(--color-accent)] uppercase tracking-[0.1em] text-[0.8rem]">
-            {data.week.label}
-          </span>
-          <span className="mx-2 text-[var(--color-border-interactive)]">|</span>
-          <span
-            className={
-              anyLive
-                ? 'font-bold text-[var(--color-pick-win)]'
-                : 'text-[var(--color-muted-foreground)]'
-            }
-          >
+      <PageHeader
+        back="/"
+        backLabel="My pools"
+        backState={{ stay: true }}
+        eyebrow={data.week.label}
+        title={data.pool.name}
+        status={
+          <span className={anyLive ? 'font-bold text-[var(--color-pick-win)]' : undefined}>
             {statusLine}
           </span>
-        </p>
-      </div>
+        }
+      />
 
       {justSubmitted ? (
-        <div className="rounded-xl border-2 border-[var(--color-accent)] bg-[var(--color-card)] p-4">
-          <b className="text-[1.05rem] text-[var(--color-accent)]">&#10003; Picks submitted</b>
-          <p className="text-[var(--color-muted-foreground)] mt-1">
-            You&rsquo;re locked in for {data.week.label}. Change your mind any time before
-            the deadline — just resubmit after.
-          </p>
-        </div>
+        <Banner tone="ok">
+          <b className="text-[var(--color-accent)]">&#10003; Picks submitted</b> — you&rsquo;re
+          locked in for {data.week.label}. Change your mind any time before the deadline,
+          just resubmit after.
+        </Banner>
       ) : null}
 
       {/* ── HERO ── */}
@@ -172,34 +168,24 @@ export function PoolHome() {
 
       {/* ── Stat tiles: rank · last week · picks in ── */}
       <div className="grid grid-cols-3 gap-2">
-        <Link
+        <StatTile
+          label="Standings"
+          value={myBest ? `#${myBest.rank}` : '—'}
           to={`/pool/${poolId}/standings`}
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 flex flex-col gap-0.5"
-        >
-          <span className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-muted-foreground)]">
-            Standings
-          </span>
-          <b className="text-[1.5rem] leading-none tabular-nums">
-            {myBest ? `#${myBest.rank}` : '—'}
-          </b>
-          <span className="text-[0.78rem] text-[var(--color-muted-foreground)]">
-            {myBest && leader
+          sub={
+            myBest && leader
               ? myBest.rank === 1
                 ? 'my rank · leading'
                 : `my rank · ${leader.totalPoints - myBest.totalPoints} behind`
-              : ''}
-          </span>
-        </Link>
+              : ''
+          }
+        />
 
-        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 flex flex-col gap-0.5">
-          <span className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-muted-foreground)]">
-            Last week
-          </span>
-          <b className="text-[1.5rem] leading-none tabular-nums">
-            {recap ? `${recap.correct}–${recap.incorrect}` : '—'}
-          </b>
-          <span className="text-[0.78rem] text-[var(--color-muted-foreground)]">
-            {recap ? (
+        <StatTile
+          label="Last week"
+          value={recap ? `${recap.correct}–${recap.incorrect}` : '—'}
+          sub={
+            recap ? (
               <>
                 +{recap.points} pts
                 {recap.rankChange != null && recap.rankChange !== 0 ? (
@@ -217,36 +203,32 @@ export function PoolHome() {
               </>
             ) : (
               'nothing graded yet'
-            )}
-          </span>
-        </div>
+            )
+          }
+        />
 
-        <Link
+        <StatTile
+          label="Picks in"
+          value={`${data.pulse.entriesComplete}/${data.pulse.entriesTotal}`}
           to={`/pool/${poolId}/picks`}
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-3 flex flex-col gap-0.5"
-        >
-          <span className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-muted-foreground)]">
-            Picks in
-          </span>
-          <b className="text-[1.5rem] leading-none tabular-nums">
-            {data.pulse.entriesComplete}/{data.pulse.entriesTotal}
-          </b>
-          <span className="text-[0.78rem] text-[var(--color-accent)] font-bold">
-            {data.revealed ? 'see everyone’s ›' : 'entries'}
-          </span>
-        </Link>
+          sub={
+            <span className="text-[var(--color-accent)] font-bold">
+              {data.revealed ? 'see everyone’s ›' : 'entries'}
+            </span>
+          }
+        />
       </div>
 
       {/* ── Admin ── */}
       {data.manager ? <AdminCard poolId={poolId} deadlinePassed={deadlinePassed} /> : null}
 
       {data.pool.managerNote ? (
-        <div className="rounded-xl border border-[var(--color-border)] border-l-4 border-l-[var(--color-accent)] bg-[var(--color-card)] p-4">
+        <Card hero>
           <h2 className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-accent)] mb-2">
             Note from the manager
           </h2>
           <Markdown source={data.pool.managerNote} />
-        </div>
+        </Card>
       ) : null}
 
       {/* Second entries are explicit and named — never a side effect. */}
@@ -260,38 +242,34 @@ export function PoolHome() {
             + Add another entry
           </button>
         ) : (
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
-            <label className="font-semibold" htmlFor="new-entry-name">
-              Name the new entry
-            </label>
-            <p className="text-[0.9rem] text-[var(--color-muted-foreground)] -mt-2">
-              It competes on its own — its own picks, its own leaderboard row. Your
-              username shows under it.
-            </p>
-            <input
-              id="new-entry-name"
-              value={addingName}
-              onChange={(e) => setAddingName(e.target.value)}
-              placeholder="e.g. My upset special"
-              maxLength={40}
-              className="min-h-[var(--tap-target-min)] px-4 rounded-lg bg-[var(--color-muted)] border-2 border-[var(--color-border-interactive)]"
-            />
+          <Card className="flex flex-col gap-3">
+            <Field
+              label="Name the new entry"
+              hint="It competes on its own — its own picks, its own leaderboard row. Your username shows under it."
+              htmlFor="new-entry-name"
+            >
+              <input
+                id="new-entry-name"
+                value={addingName}
+                onChange={(e) => setAddingName(e.target.value)}
+                placeholder="e.g. My upset special"
+                maxLength={40}
+                className="mns-input"
+              />
+            </Field>
             <div className="flex gap-2">
-              <button
+              <Button
+                className="flex-1"
                 onClick={() => addEntry.mutate(addingName.trim())}
                 disabled={!addingName.trim() || addEntry.isPending}
-                className="flex-1 min-h-[var(--tap-target-min)] rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold disabled:opacity-50"
               >
                 {addEntry.isPending ? 'Adding…' : 'Add entry'}
-              </button>
-              <button
-                onClick={() => setAddingName(null)}
-                className="min-h-[var(--tap-target-min)] px-5 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-              >
+              </Button>
+              <Button variant="quiet" onClick={() => setAddingName(null)}>
                 Cancel
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         )
       ) : null}
 
@@ -337,7 +315,7 @@ function AdminCard({ poolId, deadlinePassed }: { poolId: string; deadlinePassed:
   if (pulse.gradingPending > 0) problems.push(`${pulse.gradingPending} picks ungraded`)
 
   return (
-    <div className="rounded-xl border border-[var(--color-key)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
+    <Card admin className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[0.7rem] font-bold tracking-[0.12em] uppercase text-[var(--color-key)]">
@@ -408,59 +386,44 @@ function AdminCard({ poolId, deadlinePassed }: { poolId: string; deadlinePassed:
               >
                 {remind.isPending ? 'Sending…' : 'Yes, send'}
               </button>
-              <button
-                onClick={() => setConfirmRemind(false)}
-                className="min-h-[var(--tap-target-min)] px-3 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-              >
+              <Button variant="quiet" onClick={() => setConfirmRemind(false)}>
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
-              onClick={() => setConfirmRemind(true)}
-              className="min-h-[var(--tap-target-min)] rounded-lg border-2 border-[var(--color-border-interactive)] font-bold text-[var(--color-muted-foreground)]"
-            >
+            <Button variant="quiet" full onClick={() => setConfirmRemind(true)}>
               Send reminder email now
-            </button>
+            </Button>
           )}
         </div>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          to={`/lm/${poolId}/message`}
-          className="min-h-[var(--tap-target-min)] px-4 flex items-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-        >
+        <Button to={`/lm/${poolId}/message`} variant="quiet">
           Message members
-        </Link>
-        <Link
-          to={`/lm/${poolId}/entries`}
-          className="min-h-[var(--tap-target-min)] px-4 flex items-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-        >
+        </Button>
+        <Button to={`/lm/${poolId}/entries`} variant="quiet">
           Manage entries
-        </Link>
-        <Link
-          to={`/lm/${poolId}/settings`}
-          className="min-h-[var(--tap-target-min)] px-4 flex items-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-        >
+        </Button>
+        <Button to={`/lm/${poolId}/settings`} variant="quiet">
           Settings
-        </Link>
+        </Button>
         {pulse.joinCode ? (
-          <button
+          <Button
+            variant="quiet"
             onClick={() => {
               navigator.clipboard.writeText(
                 `${window.location.origin}/join?code=${pulse.joinCode}`
               )
               toast.success('Invite link copied')
             }}
-            className="min-h-[var(--tap-target-min)] px-4 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
           >
             Copy invite link ·{' '}
             <span className="font-mono tracking-[0.1em]">{pulse.joinCode}</span>
-          </button>
+          </Button>
         ) : null}
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -504,7 +467,7 @@ function EntryHero({
   const gameById = new Map(data.slate.map((g) => [g.gameId, g]))
 
   return (
-    <div className="rounded-xl border border-[var(--color-border)] border-l-4 border-l-[var(--color-accent)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
+    <Card hero className="flex flex-col gap-3">
       {renaming ? (
         <div className="flex gap-2">
           <input
@@ -512,21 +475,14 @@ function EntryHero({
             onChange={(ev) => onRenameChange(ev.target.value)}
             maxLength={40}
             autoFocus
-            className="flex-1 min-h-[var(--tap-target-min)] px-3 rounded-lg bg-[var(--color-muted)] border-2 border-[var(--color-border-interactive)]"
+            className="mns-input flex-1"
           />
-          <button
-            onClick={onRenameSave}
-            disabled={!renaming.value.trim() || renamePending}
-            className="min-h-[var(--tap-target-min)] px-4 rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-bold disabled:opacity-50"
-          >
+          <Button onClick={onRenameSave} disabled={!renaming.value.trim() || renamePending}>
             Save
-          </button>
-          <button
-            onClick={onRenameCancel}
-            className="min-h-[var(--tap-target-min)] px-3 rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-          >
+          </Button>
+          <Button variant="quiet" onClick={onRenameCancel}>
             Cancel
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2">
@@ -572,16 +528,13 @@ function EntryHero({
               )}
             </p>
           )}
-          <Link
-            to={`/pool/${poolId}/picks`}
-            className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold text-[1.05rem]"
-          >
+          <Button to={`/pool/${poolId}/picks`} full>
             {mine.length === 0
               ? 'Make my picks'
               : entry.submittedAt && complete
                 ? 'View / change picks'
                 : 'Finish my picks'}
-          </Link>
+          </Button>
         </>
       ) : !data.published ? (
         <p className="text-[var(--color-muted-foreground)]">
@@ -604,15 +557,12 @@ function EntryHero({
               <p className="text-[var(--color-muted-foreground)]">No picks made this week.</p>
             ) : null}
           </div>
-          <Link
-            to={`/pool/${poolId}/picks`}
-            className="min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-          >
+          <Button to={`/pool/${poolId}/picks`} variant="quiet" full>
             {anyLive ? 'Watch the week live' : 'See the full week'}
-          </Link>
+          </Button>
         </>
       )}
-    </div>
+    </Card>
   )
 }
 

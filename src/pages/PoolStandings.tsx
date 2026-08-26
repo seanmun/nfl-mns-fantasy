@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
 import { createApi, type StandingsRow } from '@/lib/api/client'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
+import { Card, Chip, EmptyState, ListRow, PageHeader, Skeleton } from '@/ui/components'
 
 function WinnersBlock({
   title,
@@ -77,16 +78,20 @@ export function PoolStandings() {
 
 
   if (isLoading) {
-    return <p className="px-4 py-12 text-[var(--color-muted-foreground)]">Loading standings&hellip;</p>
+    return (
+      <div className="max-w-xl mx-auto w-full px-4 py-6 flex flex-col gap-2">
+        <Skeleton h="2.2rem" w="55%" />
+        <Skeleton h="3.4rem" />
+        <Skeleton h="3.4rem" />
+        <Skeleton h="3.4rem" />
+      </div>
+    )
   }
   if (error || !data) {
     return (
-      <div className="px-4 py-12">
-        <h1 className="text-[1.3rem] font-bold mb-2">Something went wrong</h1>
-        <p className="text-[var(--color-muted-foreground)]">
-          {(error as Error)?.message ?? 'Could not load the standings.'}
-        </p>
-      </div>
+      <EmptyState title="Something went wrong">
+        {(error as Error)?.message ?? 'Could not load the standings.'}
+      </EmptyState>
     )
   }
 
@@ -96,20 +101,12 @@ export function PoolStandings() {
 
   return (
     <div className="max-w-xl mx-auto w-full px-4 py-6 pb-28 flex flex-col gap-4">
-      <div>
-        <Link
-          to={`/pool/${poolId}`}
-          className="inline-flex items-center min-h-[var(--tap-target-min)] font-bold text-[var(--color-accent)]"
-        >
-          &larr; Pool home
-        </Link>
-        <h1 className="text-[1.7rem] font-extrabold leading-tight">
-          {data.final ? 'Final standings' : 'Standings'}
-        </h1>
-        <p className="mt-1 text-[var(--color-muted-foreground)]">
-          Most points wins. The key ★ total only breaks ties.
-        </p>
-      </div>
+      <PageHeader
+        back={`/pool/${poolId}`}
+        backLabel="Pool home"
+        title={data.final ? 'Final standings' : 'Standings'}
+        status="Most points wins. The key ★ total only breaks ties."
+      />
 
       {data.final && champions.length ? (
         <div className="rounded-xl border-2 border-[var(--color-key)] bg-[var(--color-card)] p-5 text-center">
@@ -130,7 +127,7 @@ export function PoolStandings() {
 
       {data.winners &&
       (data.final || data.winners.segments.some((s) => s.complete)) ? (
-        <section className="rounded-xl border border-[var(--color-key)] bg-[var(--color-card)] p-4 flex flex-col gap-3">
+        <Card admin className="flex flex-col gap-3">
           <h2 className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-key)]">
             Winners circle
           </h2>
@@ -176,7 +173,7 @@ export function PoolStandings() {
               Season prizes land here when the last week is decided.
             </p>
           ) : null}
-        </section>
+        </Card>
       ) : null}
 
       {data.final ? (
@@ -215,24 +212,25 @@ export function PoolStandings() {
           </p>
           <ul className="flex flex-col gap-1">
             {rows.map((r) => (
-              <li
-                key={r.entryId}
-                className={
-                  'flex items-baseline justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 ' +
-                  (r.isMine ? 'border-[var(--color-accent)]' : '')
-                }
-              >
-                <span className="truncate">
-                  <b>{r.entryName}</b>
-                  {r.isMine ? (
-                    <span className="ml-2 text-[0.7rem] font-bold uppercase tracking-wider text-[var(--color-accent)]">
-                      you
+              <li key={r.entryId}>
+                <ListRow
+                  mine={r.isMine}
+                  title={
+                    <>
+                      {r.entryName}
+                      {r.isMine ? (
+                        <span className="ml-1.5">
+                          <Chip tone="accent">you</Chip>
+                        </span>
+                      ) : null}
+                    </>
+                  }
+                  end={
+                    <span className="text-[0.8rem] text-[var(--color-muted-foreground)]">
+                      {r.ownerName ?? ''}
                     </span>
-                  ) : null}
-                </span>
-                <span className="shrink-0 text-[0.8rem] text-[var(--color-muted-foreground)]">
-                  {r.ownerName ?? ''}
-                </span>
+                  }
+                />
               </li>
             ))}
           </ul>
@@ -243,53 +241,46 @@ export function PoolStandings() {
           bunched. Rank | name+username | points, and the admin detail
           (email, bench/ban/admin) folded behind a Manage tap. */}
       {graded ? (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col gap-2 tabular-nums">
           {rows.map((r) => {
             const w = r.weekly.reduce((n, x) => n + x.correct, 0)
             const l = r.weekly.reduce((n, x) => n + x.incorrect, 0)
             const pp = r.weekly.reduce((n, x) => n + x.push, 0)
             return (
-              <li
-                key={r.entryId}
-                className={
-                  'rounded-xl border bg-[var(--color-card)] px-3 py-2.5 ' +
-                  (r.isMine
-                    ? 'border-[var(--color-accent)]'
-                    : 'border-[var(--color-border)]')
-                }
-              >
-                <div className="flex items-center gap-3 tabular-nums">
-                  <b className="shrink-0 w-9 text-[1.3rem] text-center">{r.rank}</b>
-                  <span className="flex-1 min-w-0">
-                    <b className="block truncate text-[1.05rem]">
+              <li key={r.entryId}>
+                <ListRow
+                  mine={r.isMine}
+                  lead={r.rank}
+                  title={
+                    <>
                       {r.entryName}
                       {r.isMine ? (
-                        <span className="ml-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[var(--color-accent)]">
-                          you
+                        <span className="ml-1.5">
+                          <Chip tone="accent">you</Chip>
                         </span>
                       ) : null}
                       {r.ownerIsAdmin ? (
-                        <span className="ml-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[var(--color-key)]">
-                          {r.ownerIsCreator ? 'mgr' : 'adm'}
+                        <span className="ml-1.5">
+                          <Chip tone="key">{r.ownerIsCreator ? 'mgr' : 'adm'}</Chip>
                         </span>
                       ) : null}
                       {r.isEliminated ? (
-                        <span className="ml-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[var(--color-pick-loss)]">
-                          out
+                        <span className="ml-1.5">
+                          <Chip tone="loss">out</Chip>
                         </span>
                       ) : null}
-                    </b>
-                    <span className="block truncate text-[0.8rem] text-[var(--color-muted-foreground)]">
-                      {r.ownerName ?? ''}
+                    </>
+                  }
+                  sub={r.ownerName ?? ''}
+                  end={
+                    <span>
+                      <b className="block text-[1.2rem] leading-tight">{r.totalPoints}</b>
+                      <span className="block text-[0.78rem] text-[var(--color-muted-foreground)]">
+                        <span className="text-[var(--color-key)]">★{r.keyPickScore}</span> · {w}-{l}-{pp}
+                      </span>
                     </span>
-                  </span>
-                  <span className="shrink-0 text-right">
-                    <b className="block text-[1.2rem] leading-tight">{r.totalPoints}</b>
-                    <span className="block text-[0.78rem] text-[var(--color-muted-foreground)]">
-                      <span className="text-[var(--color-key)]">★{r.keyPickScore}</span> · {w}-{l}-{pp}
-                    </span>
-                  </span>
-                </div>
+                  }
+                />
               </li>
             )
           })}

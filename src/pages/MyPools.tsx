@@ -4,6 +4,7 @@ import { useAuth, useUser } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createApi } from '@/lib/api/client'
+import { Button, Card, EmptyState, Skeleton } from '@/ui/components'
 
 export function MyPools() {
   const { getToken } = useAuth()
@@ -45,88 +46,73 @@ export function MyPools() {
       <h1 className="text-[1.7rem] font-extrabold leading-tight">My pools</h1>
 
       <div className="flex gap-3">
-        <Link
-          to="/create"
-          className="flex-1 min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold"
-        >
+        <Button to="/create" className="flex-1">
           Create a pool
-        </Link>
-        <Link
-          to="/join"
-          className="flex-1 min-h-[var(--tap-target-min)] flex items-center justify-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-        >
+        </Button>
+        <Button to="/join" variant="quiet" className="flex-1">
           Join a pool
-        </Link>
+        </Button>
       </div>
 
       {isLoading ? (
-        <p className="text-[var(--color-muted-foreground)]">Loading&hellip;</p>
+        <div className="flex flex-col gap-3">
+          <Skeleton h="8rem" />
+          <Skeleton h="8rem" />
+        </div>
       ) : !data?.pools.length ? (
-        <p className="text-[var(--color-muted-foreground)] leading-relaxed">
-          You&rsquo;re not in any pools yet. Create one, or join with a code someone
-          sent you.
-        </p>
+        <EmptyState title="You're not in any pools yet">
+          Create one, or join with a code someone sent you.
+        </EmptyState>
       ) : (
         <ul className="flex flex-col gap-3">
           {activePools.map(({ pool, entries }) => (
-            <li
-              key={pool.id}
-              className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex flex-col gap-3"
-            >
-              {/* The whole card leads to the pool page — standings,
-                  pick status, make/edit picks all live there. */}
-              <Link to={`/pool/${pool.id}`} className="block">
-                <b className="block text-[1.1rem] text-[var(--color-accent)]">{pool.name}</b>
-                <span className="text-[0.9rem] text-[var(--color-muted-foreground)]">
-                  {entries.map((e) => e.entryName).join(' · ')} &middot; {pool.season}
-                </span>
-              </Link>
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  to={`/pool/${pool.id}`}
-                  className="min-h-[var(--tap-target-min)] px-5 flex items-center rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-bold"
-                >
-                  Open pool
+            <li key={pool.id}>
+              <Card className="flex flex-col gap-3">
+                {/* The whole card leads to the pool page — standings,
+                    pick status, make/edit picks all live there. */}
+                <Link to={`/pool/${pool.id}`} className="block">
+                  <b className="block text-[1.1rem] text-[var(--color-accent)]">{pool.name}</b>
+                  <span className="text-[0.9rem] text-[var(--color-muted-foreground)]">
+                    {entries.map((e) => e.entryName).join(' · ')} &middot; {pool.season}
+                  </span>
                 </Link>
-                <Link
-                  to={`/pool/${pool.id}/picks`}
-                  className="min-h-[var(--tap-target-min)] px-5 flex items-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-                >
-                  Make picks
-                </Link>
-                {/* Manager tools only for whoever created it. */}
-                {user?.id === pool.createdBy ? (
-                  <Link
-                    to={`/lm/${pool.id}/week`}
-                    className="min-h-[var(--tap-target-min)] px-5 flex items-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-                  >
-                    Manage week
-                  </Link>
-                ) : null}
-              </div>
-              {user?.id === pool.createdBy && pool.joinCode ? (
-                <div className="flex flex-col gap-2">
-                  <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
-                    Invite code:{' '}
-                    <b className="font-mono tracking-[0.15em] text-[var(--color-foreground)]">
-                      {pool.joinCode}
-                    </b>
-                  </p>
-                  {/* The link form of the code — /join?code= prefills the
-                      join page, so this is the thing to text people. */}
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(
-                        `${window.location.origin}/join?code=${pool.joinCode}`
-                      )
-                      toast.success('Invite link copied — text it to your pool')
-                    }}
-                    className="min-h-[var(--tap-target-min)] px-5 flex items-center justify-center rounded-lg border-2 border-[var(--color-border-interactive)] font-bold"
-                  >
-                    Copy invite link
-                  </button>
+                <div className="flex flex-wrap gap-2">
+                  <Button to={`/pool/${pool.id}`}>Open pool</Button>
+                  <Button to={`/pool/${pool.id}/picks`} variant="quiet">
+                    Make picks
+                  </Button>
+                  {/* Manager tools only for whoever created it. */}
+                  {user?.id === pool.createdBy ? (
+                    <Button to={`/lm/${pool.id}/week`} variant="quiet">
+                      Manage week
+                    </Button>
+                  ) : null}
                 </div>
-              ) : null}
+                {user?.id === pool.createdBy && pool.joinCode ? (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
+                      Invite code:{' '}
+                      <b className="font-mono tracking-[0.15em] text-[var(--color-foreground)]">
+                        {pool.joinCode}
+                      </b>
+                    </p>
+                    {/* The link form of the code — /join?code= prefills the
+                        join page, so this is the thing to text people. */}
+                    <Button
+                      variant="quiet"
+                      full
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          `${window.location.origin}/join?code=${pool.joinCode}`
+                        )
+                        toast.success('Invite link copied — text it to your pool')
+                      }}
+                    >
+                      Copy invite link
+                    </Button>
+                  </div>
+                ) : null}
+              </Card>
             </li>
           ))}
         </ul>
