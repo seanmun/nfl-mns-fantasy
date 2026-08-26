@@ -283,6 +283,11 @@ export function PoolPicks() {
               wantsKey={wantsKey}
               atLimit={need != null && have >= need && !picks.has(game.gameId)}
               counts={countsByGame.get(game.gameId) ?? null}
+              myLine={
+                data.myPicks.find(
+                  (p) => p.entryId === activeEntry && p.gameId === game.gameId
+                )?.lineSpreadAtPick ?? null
+              }
               onPick={(teamId) => toggleTeam(game, teamId)}
               onKey={() => setKey(game.gameId)}
             />
@@ -370,6 +375,7 @@ function GameCard({
   wantsKey,
   atLimit,
   counts,
+  myLine,
   onPick,
   onKey,
 }: {
@@ -380,9 +386,15 @@ function GameCard({
   atLimit: boolean
   // Entries on each side, post-reveal only; null before the deadline.
   counts: Map<string, number> | null
+  // The line the caller's SAVED pick grades on, when it differs from
+  // the current number (post-publish admin fix). Null otherwise.
+  myLine: number | null
   onPick: (teamId: string) => void
   onKey: () => void
 }) {
+  const fmtLine = (v: number | null) =>
+    v == null ? 'off board' : v > 0 ? `+${v}` : `${v}`
+  const lastChange = game.lineEvents[game.lineEvents.length - 1]
   return (
     <article
       className={
@@ -458,6 +470,21 @@ function GameCard({
           </div>
         )
       })()}
+
+      {/* Post-publish line changes are public — nobody should learn from
+          a grade that the number moved. State is words, never colour
+          alone. */}
+      {spreadMode === 'ats' && lastChange ? (
+        <p className="px-3 pb-2 text-[0.8rem] text-[var(--color-key)] tabular-nums">
+          Line changed {kickoffLabel(lastChange.changedAt)} — was {fmtLine(lastChange.prevSpread)}
+          {game.lineEvents.length > 1 ? ` (${game.lineEvents.length} changes)` : ''}
+        </p>
+      ) : null}
+      {spreadMode === 'ats' && myLine != null && game.spread != null && myLine !== game.spread ? (
+        <p className="px-3 pb-2 text-[0.8rem] font-semibold text-[var(--color-accent)] tabular-nums">
+          Your pick keeps the number you took: {game.home?.nickname} {fmtLine(myLine)}
+        </p>
+      ) : null}
 
       {wantsKey && picked ? (
         <div className="border-t border-[var(--color-border)] p-2.5">

@@ -355,6 +355,22 @@ export const nflPoolGames = nflSchema.table('pool_games', {
   index('nfl_pool_games_pool_week_idx').on(t.poolId, t.weekId),
 ])
 
+// Every post-publish line change, one row per edit, visible to the whole
+// pool — an admin can fix a published number (rare, but a fat-fingered
+// -3.5 typed as +3.5 happens), and the price of the power is that the
+// change is public. Picks are unharmed either way: each pick grades on
+// the line it was made against (picks.lineSpreadAtPick).
+export const nflPoolGameLineEvents = nflSchema.table('pool_game_line_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  poolGameId: uuid('pool_game_id').notNull().references(() => nflPoolGames.id, { onDelete: 'cascade' }),
+  prevSpread: real('prev_spread'),
+  spread: real('spread'),
+  changedBy: text('changed_by').notNull(),
+  changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('nfl_line_events_pool_game_idx').on(t.poolGameId),
+])
+
 // ─── ENTRIES ──────────────────────────────────────────────────────────────────
 
 // One row per ENTRY, and a user may hold several in the same pool. The
@@ -477,11 +493,11 @@ export const nflPicks = nflSchema.table('picks', {
   // member, because silently inventing someone's picks and showing them
   // as if they were deliberate is how a pool loses trust.
   isAuto: boolean('is_auto').notNull().default(false),
-  // The published spread the user actually saw, copied in at pick time.
-  // Grading uses game_lines, NOT this — one official number for everyone
-  // is the whole point of publishing. This exists so a disputed grade can
-  // be answered, and so a line that moved after publish is visible rather
-  // than silent.
+  // The pool's line at the moment this pick was saved — the number the
+  // member actually took. GRADING PREFERS THIS (falling back to
+  // pool_games.spread for rows that predate the snapshot), which is what
+  // makes a rare post-publish line fix fair: the edit applies only to
+  // picks made after it, like any real book.
   lineSpreadAtPick: real('line_spread_at_pick'),
   result: text('result').$type<PickResult>().notNull().default('pending'),
   pointsEarned: real('points_earned').notNull().default(0),

@@ -136,6 +136,9 @@ export async function autofillPoolWeek(
             weekId: poolWeek.weekId,
             selectedTeamId: a.selectedTeamId,
             isAuto: true,
+            // Auto picks take the line as it stands at fill time, same
+            // deal as a member saving at that moment.
+            lineSpreadAtPick: slate.find((g) => g.gameId === a.gameId)?.spread ?? null,
           }))
         )
         result.picksAssigned += assigned.length

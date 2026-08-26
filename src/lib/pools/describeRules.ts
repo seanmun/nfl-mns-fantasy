@@ -90,8 +90,8 @@ export function describeRules(pool: DescribePoolInput): RuleSection[] {
 
   play.push(
     ats
-      ? 'Picks are against the spread — your team has to beat the number shown next to it, not just win the game.'
-      : 'Picks are straight up — you just need your team to win the game.'
+      ? 'Picks are against the spread — your team has to beat the number shown next to it, not just win the game. In the rare case the manager corrects a published number before kickoff, the change is shown to everyone, and any pick already made keeps the number it was made against.'
+      :'Picks are straight up — you just need your team to win the game.'
   )
   play.push(`The pool runs from Week ${pool.startWeek} through Week ${pool.endWeek}.`)
   sections.push({ heading: 'How it works', items: play })

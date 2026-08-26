@@ -24,6 +24,9 @@ export interface ApiSlateGame {
   // Published ATS game with no number: visible, never pickable, may
   // come back on the board if the admin fills the line in later.
   offBoard: boolean
+  // Every post-publish change to this game's line, oldest first. Public
+  // to the whole pool — the price of the admin's edit power.
+  lineEvents: Array<{ prevSpread: number | null; spread: number | null; changedAt: string }>
   // Computed server-side through isPickable, so the client never has to
   // reimplement the two-cutoff rule and get it subtly different.
   open: boolean
@@ -38,6 +41,9 @@ export interface ApiPick {
   isKeyPick: boolean
   isKeyAuto: boolean
   isAuto: boolean
+  // The line this pick grades on — the pool's number when it was saved.
+  // When it differs from the game's current line, the UI says so.
+  lineSpreadAtPick: number | null
   result: 'pending' | 'win' | 'loss' | 'push' | 'missed'
   pointsEarned: number
 }

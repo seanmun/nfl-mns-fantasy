@@ -31,8 +31,10 @@ interface AdminGame {
   spreadSource: 'api' | 'manual'
   marketSpread: number | null
   started: boolean
-  // Published + numbered: this line is locked for the season.
+  // Published lines stay editable until kickoff (changes are logged and
+  // public); only a started game's line is settled.
   locked: boolean
+  lineEvents: Array<{ prevSpread: number | null; spread: number | null; changedAt: string }>
 }
 
 interface WeekAdminResponse {
@@ -178,6 +180,9 @@ export function PoolWeekAdmin() {
               <b className="text-[var(--color-foreground)]">
                 {data.pickDeadlineAt ? kickoffLabel(data.pickDeadlineAt) : '\u2014'}
               </b>
+              . Lines stay editable until each game kicks off \u2014 any change to a
+              published line is logged and shown to every member, and picks
+              already made keep the number they took.
             </>
           ) : (
             'Not published yet — members cannot pick until you publish.'
@@ -204,7 +209,12 @@ export function PoolWeekAdmin() {
                 {day}
               </h2>
             ) : null}
-            <AdminGameRow game={g} ats={ats} onChange={(patch) => update(g.gameId, patch)} />
+            <AdminGameRow
+              game={g}
+              ats={ats}
+              published={data.publishedAt != null}
+              onChange={(patch) => update(g.gameId, patch)}
+            />
           </div>
         )
       })}
@@ -285,7 +295,7 @@ export function PoolWeekAdmin() {
               disabled={!canPublish || publish.isPending}
               className="flex-1 min-h-[var(--tap-target-min)] rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] font-extrabold disabled:bg-[var(--color-border-interactive)] disabled:text-[var(--color-card)]"
             >
-              {data.publishedAt ? 'Fill lines & re-publish' : 'Publish week'}
+              {data.publishedAt ? 'Update lines & re-publish' : 'Publish week'}
             </button>
           </div>
         )}
@@ -299,10 +309,12 @@ export function PoolWeekAdmin() {
 function AdminGameRow({
   game,
   ats,
+  published,
   onChange,
 }: {
   game: AdminGame
   ats: boolean
+  published: boolean
   onChange: (patch: Partial<AdminGame>) => void
 }) {
   const drift =
@@ -380,7 +392,9 @@ function AdminGameRow({
               >
                 +
               </button>
-              {game.spread != null ? (
+              {/* A published number can change but cannot VANISH — off
+                  the board is a pre-publish state. */}
+              {game.spread != null && !published ? (
                 <button
                   type="button"
                   disabled={game.started}
@@ -402,6 +416,21 @@ function AdminGameRow({
           ) : (
             <span className="text-[0.8rem] text-[var(--color-muted-foreground)]">no market line</span>
           )}
+        </div>
+      ) : null}
+
+      {/* The public record of every post-publish change to this line. */}
+      {game.lineEvents.length > 0 ? (
+        <div className="pl-9 flex flex-col gap-0.5">
+          {game.lineEvents.map((e, i) => (
+            <p key={i} className="text-[0.8rem] text-[var(--color-key)] tabular-nums">
+              Line changed {kickoffLabel(e.changedAt)}:{' '}
+              {e.prevSpread == null ? 'off board' : e.prevSpread > 0 ? `+${e.prevSpread}` : e.prevSpread}
+              {' → '}
+              {e.spread == null ? 'off board' : e.spread > 0 ? `+${e.spread}` : e.spread} — members
+              can see this
+            </p>
+          ))}
         </div>
       ) : null}
     </div>

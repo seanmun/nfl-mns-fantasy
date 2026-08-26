@@ -7,6 +7,7 @@ import {
   nflGames,
   nflPoolEntries,
   nflPoolAnnouncements,
+  nflPoolGameLineEvents,
   nflPoolGames,
   nflPoolWeeks,
   nflTeams,
@@ -125,11 +126,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const game = gameById.get(row.gameId)
       if (!game) continue
 
-      // Publishing LOCKS the lines. After it, exactly one edit exists:
-      // giving a number to a game that went out OFF THE BOARD (null
-      // spread) — and only before that game kicks off. A published
-      // number never moves and the slate never changes; members have
-      // already picked against both.
+      // Publishing locks the SLATE, not the numbers. A published line can
+      // still be corrected until its game kicks off — rare, but a
+      // fat-fingered sign happens — and every such change is logged for
+      // the whole pool to see. Fairness lives in the picks: each pick
+      // grades on the line it was saved against, so an edit only applies
+      // forward. What a publish does still forbid: changing which games
+      // are in, taking a numbered game off the board, and touching
+      // anything after kickoff.
       if (published) {
         const prior = existingByGame.get(row.gameId)
         if (!prior) continue
@@ -138,19 +142,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             error: 'The slate is locked once the week is published.',
           })
         }
-        if (prior.spread != null && row.spread !== prior.spread) {
+        if (prior.spread != null && row.spread == null) {
           return res.status(409).json({
-            error: 'Published lines are locked. Only off-the-board games can still get a number.',
+            error: 'A published line can change, but a game cannot go off the board after members have picked it.',
           })
         }
-        if (
-          prior.spread == null &&
-          row.spread != null &&
-          !isTbdKickoff(game.kickoffAt) &&
-          now >= game.kickoffAt
-        ) {
-          return res.status(409).json({
-            error: 'That game has already started — it stays off the board.',
+        if (row.spread !== prior.spread) {
+          if (!isTbdKickoff(game.kickoffAt) && now >= game.kickoffAt) {
+            return res.status(409).json({
+              error: 'That game has already started — its line is settled.',
+            })
+          }
+          await db.insert(nflPoolGameLineEvents).values({
+            poolGameId: prior.id,
+            prevSpread: prior.spread,
+            spread: row.spread,
+            changedBy: ctx.userId,
           })
         }
       }
@@ -338,6 +345,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const teams = await db.select().from(nflTeams)
   const teamById = new Map(teams.map((t) => [t.id, t]))
 
+  // Post-publish line changes, keyed by game, oldest first — shown to
+  // the admin here and to members on the picks page.
+  const events = rows.length
+    ? await db
+        .select()
+        .from(nflPoolGameLineEvents)
+        .where(inArray(nflPoolGameLineEvents.poolGameId, rows.map((r) => r.id)))
+        .orderBy(asc(nflPoolGameLineEvents.changedAt))
+    : []
+  const poolGameToGame = new Map(rows.map((r) => [r.id, r.gameId]))
+  const eventsByGame = new Map<string, typeof events>()
+  for (const e of events) {
+    const gameId = poolGameToGame.get(e.poolGameId)
+    if (!gameId) continue
+    const list = eventsByGame.get(gameId) ?? []
+    list.push(e)
+    eventsByGame.set(gameId, list)
+  }
+
   const now = new Date()
   const slate = games.map((g) => {
     const row = byGame.get(g.id)
@@ -353,9 +379,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // The market number, for comparison. Never what grading reads.
       marketSpread: lineByGame.get(g.id)?.spread ?? null,
       started: !isTbdKickoff(g.kickoffAt) && now >= g.kickoffAt,
-      // Published + numbered = locked. Published + null = off the board,
-      // still fillable until kickoff.
-      locked: ensuredPoolWeek.linesPublishedAt != null && (row?.spread ?? null) != null,
+      // Published lines stay editable until their game kicks off; every
+      // change is logged in lineEvents. Only kickoff settles a line.
+      locked:
+        ensuredPoolWeek.linesPublishedAt != null &&
+        !isTbdKickoff(g.kickoffAt) &&
+        now >= g.kickoffAt,
+      lineEvents: (eventsByGame.get(g.id) ?? []).map((e) => ({
+        prevSpread: e.prevSpread,
+        spread: e.spread,
+        changedAt: e.changedAt,
+      })),
     }
   })
 

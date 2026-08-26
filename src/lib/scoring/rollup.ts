@@ -78,7 +78,11 @@ export async function gradePoolWeek(
         },
         selectedTeamId: pick.selectedTeamId,
         confidencePoints: pick.confidencePoints,
-        officialSpread: spreadByGame.get(pick.gameId) ?? null,
+        // The line the member actually took, snapshotted at save time —
+        // a post-publish line fix applies only to picks made after it.
+        // The pool's current number is the fallback for rows that
+        // predate the snapshot.
+        officialSpread: pick.lineSpreadAtPick ?? spreadByGame.get(pick.gameId) ?? null,
       })
 
       await db

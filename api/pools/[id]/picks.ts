@@ -7,6 +7,7 @@ import {
   nflGames,
   nflPicks,
   nflPoolEntries,
+  nflPoolGameLineEvents,
   nflPoolGames,
   nflPoolWeeks,
   nflTeams,
@@ -64,6 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── The pool's slate for that week ──────────────────────────────
   const slateRows = await db
     .select({
+      poolGameId: nflPoolGames.id,
       gameId: nflGames.id,
       kickoffAt: nflGames.kickoffAt,
       status: nflGames.status,
@@ -88,6 +90,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const teams = await db.select().from(nflTeams)
   const teamById = new Map(teams.map((t) => [t.id, t]))
 
+  // Post-publish line changes, public to the whole pool: a member must
+  // never discover from a grade that the number moved.
+  const lineEventRows = slateRows.length
+    ? await db
+        .select()
+        .from(nflPoolGameLineEvents)
+        .where(inArray(nflPoolGameLineEvents.poolGameId, slateRows.map((g) => g.poolGameId)))
+        .orderBy(asc(nflPoolGameLineEvents.changedAt))
+    : []
+  const gameByPoolGame = new Map(slateRows.map((g) => [g.poolGameId, g.gameId]))
+  const lineEventsByGame = new Map<string, Array<{ prevSpread: number | null; spread: number | null; changedAt: Date }>>()
+  for (const e of lineEventRows) {
+    const gameId = gameByPoolGame.get(e.poolGameId)
+    if (!gameId) continue
+    const list = lineEventsByGame.get(gameId) ?? []
+    list.push({ prevSpread: e.prevSpread, spread: e.spread, changedAt: e.changedAt })
+    lineEventsByGame.set(gameId, list)
+  }
+
   const now = new Date()
   const published = poolWeek?.linesPublishedAt ?? null
   const deadline = poolWeek?.pickDeadlineAt ?? null
@@ -109,6 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     home: teamById.get(g.homeTeamId) ?? null,
     away: teamById.get(g.awayTeamId) ?? null,
     offBoard: isOffBoard(g.spread),
+    lineEvents: lineEventsByGame.get(g.gameId) ?? [],
     open:
       !isOffBoard(g.spread) &&
       isPickable({
@@ -469,19 +491,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (replaceable.length > 0) {
+      // The line each pick grades on. An unchanged pick KEEPS the number
+      // it was first saved at — resaving the week after an admin's line
+      // fix must not silently move a decision the member already made.
+      // Switching teams is a new decision and takes the current number.
+      const priorByGame = new Map(
+        myPicks.filter((p) => p.entryId === entryId).map((p) => [p.gameId, p])
+      )
       await db.insert(nflPicks).values(
-        replaceable.map((p) => ({
-          entryId,
-          gameId: p.gameId,
-          weekId: week.id,
-          selectedTeamId: p.selectedTeamId,
-          confidencePoints: p.confidencePoints ?? null,
-          isKeyPick: p.isKeyPick === true,
-          // Anything written here was chosen by a person. The deadline
-          // job is the only thing that sets isAuto.
-          isAuto: false,
-          lineSpreadAtPick: slateRows.find((g) => g.gameId === p.gameId)?.spread ?? null,
-        }))
+        replaceable.map((p) => {
+          const prior = priorByGame.get(p.gameId)
+          const keepLine =
+            prior != null &&
+            prior.selectedTeamId === p.selectedTeamId &&
+            prior.lineSpreadAtPick != null
+          return {
+            entryId,
+            gameId: p.gameId,
+            weekId: week.id,
+            selectedTeamId: p.selectedTeamId,
+            confidencePoints: p.confidencePoints ?? null,
+            isKeyPick: p.isKeyPick === true,
+            // Anything written here was chosen by a person. The deadline
+            // job is the only thing that sets isAuto.
+            isAuto: false,
+            lineSpreadAtPick: keepLine
+              ? prior.lineSpreadAtPick
+              : slateRows.find((g) => g.gameId === p.gameId)?.spread ?? null,
+          }
+        })
       )
     }
 
