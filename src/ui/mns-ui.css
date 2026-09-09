@@ -110,3 +110,27 @@ textarea.mns-input { padding: 0.75rem 1rem; line-height: 1.5; min-height: 6rem; 
 .mns-theme-toggle { display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; min-width: 3rem; border-radius: 0.5rem; border: none; background: transparent; color: var(--color-muted-foreground); cursor: pointer; }
 .mns-theme-toggle:hover { color: var(--color-foreground); }
 .mns-theme-toggle:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+
+/* ── BottomTabBar center action (the Ask button) ── */
+.mns-tab-ask { flex: 0 0 auto; align-self: center; margin: -1.1rem 0.5rem 0; min-height: 3.5rem; min-width: 3.5rem; border-radius: 999px; border: 2px solid var(--color-accent); background: var(--color-accent); color: var(--color-accent-foreground); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.05rem; font-weight: 800; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.25); }
+.mns-tab-ask:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+
+/* ── Sheet (assistant layer) ── */
+.mns-sheet-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.45); display: flex; align-items: flex-end; }
+.mns-sheet { width: 100%; max-height: 80vh; min-height: 55vh; display: flex; flex-direction: column; background: var(--color-background); border-top: 1px solid var(--color-border-interactive); border-radius: 1rem 1rem 0 0; padding-bottom: env(safe-area-inset-bottom); }
+.mns-sheet__grip { min-height: 2.25rem; width: 100%; display: flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; }
+.mns-sheet__grip::before { content: ''; width: 3rem; height: 0.3rem; border-radius: 999px; background: var(--color-border-interactive); }
+
+/* ── AssistantChat ── */
+.mns-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 0 1rem 0.75rem; }
+.mns-chat__scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.25rem 0 0.75rem; }
+.mns-chat__bubble { max-width: 85%; border-radius: 1rem; padding: 0.6rem 0.9rem; white-space: pre-wrap; line-height: 1.5; font-size: 0.95rem; }
+.mns-chat__bubble--user { align-self: flex-end; background: var(--color-accent); color: var(--color-accent-foreground); }
+.mns-chat__bubble--assistant { align-self: flex-start; background: var(--color-card); border: 1px solid var(--color-border); color: var(--color-foreground); }
+.mns-chat__suggestion { text-align: left; border: 1px solid var(--color-border-interactive); background: var(--color-card); color: var(--color-foreground); border-radius: 0.75rem; padding: 0.7rem 1rem; min-height: 3rem; cursor: pointer; }
+.mns-chat__composer { display: flex; align-items: flex-end; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--color-border); }
+.mns-chat__input { flex: 1; resize: none; min-height: 3rem; border-radius: 0.75rem; background: var(--color-card); border: 1px solid var(--color-border-interactive); color: var(--color-foreground); padding: 0.7rem 1rem; font-size: 1rem; }
+.mns-chat__btn { min-height: 3rem; min-width: 3rem; border-radius: 0.75rem; border: 1px solid var(--color-border-interactive); background: transparent; color: var(--color-muted-foreground); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.mns-chat__btn--primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-foreground); }
+.mns-chat__btn--active { border-color: var(--color-accent); color: var(--color-accent); }
+.mns-chat__btn:disabled { opacity: 0.4; cursor: not-allowed; }

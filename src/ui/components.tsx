@@ -4,7 +4,7 @@
 // from the Phase 0 best-in-class picks: hub's forms, ncaa's cards and
 // countdown, golf's empty state, nfl's tab bar / stepper / hero.
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useTheme } from './theme'
 
@@ -196,14 +196,21 @@ export function Skeleton({ h = '1rem', w = '100%' }: { h?: string; w?: string })
 // ── BottomTabBar ────────────────────────────────────────────────────
 // One nav model for every game: Home · Play · Standings inside a
 // context. `basePath` is the context root (/pool/:id or /league/:id).
+// `onAsk` adds the assistant button in the bar's center — a BUTTON,
+// not a tab: it opens the assistant sheet over the current screen and
+// navigates nowhere, so the three-tab model stays intact underneath.
 export function BottomTabBar({
   basePath,
   playLabel = 'Picks',
   playPath = 'picks',
+  onAsk,
+  askLabel = 'Ask',
 }: {
   basePath: string
   playLabel?: string
   playPath?: string
+  onAsk?: () => void
+  askLabel?: string
 }) {
   const { pathname } = useLocation()
   const tabs = [
@@ -211,24 +218,36 @@ export function BottomTabBar({
     { to: `${basePath}/${playPath}`, label: playLabel, icon: '✓', exact: false },
     { to: `${basePath}/standings`, label: 'Standings', icon: '\u{1F3C6}', exact: false },
   ]
+  const renderTab = (t: (typeof tabs)[number]) => {
+    const active = t.exact ? pathname === t.to : pathname.startsWith(t.to)
+    return (
+      <Link
+        key={t.to}
+        to={t.to}
+        aria-current={active ? 'page' : undefined}
+        className={'mns-tab' + (active ? ' mns-tab--active' : '')}
+      >
+        <span aria-hidden="true" className="mns-tab__icon">
+          {t.icon}
+        </span>
+        {t.label}
+      </Link>
+    )
+  }
   return (
     <nav aria-label="Sections" className="mns-tabbar">
-      {tabs.map((t) => {
-        const active = t.exact ? pathname === t.to : pathname.startsWith(t.to)
-        return (
-          <Link
-            key={t.to}
-            to={t.to}
-            aria-current={active ? 'page' : undefined}
-            className={'mns-tab' + (active ? ' mns-tab--active' : '')}
-          >
-            <span aria-hidden="true" className="mns-tab__icon">
-              {t.icon}
-            </span>
-            {t.label}
-          </Link>
-        )
-      })}
+      {renderTab(tabs[0])}
+      {renderTab(tabs[1])}
+      {onAsk ? (
+        <button type="button" className="mns-tab-ask" onClick={onAsk} aria-label={`${askLabel} the assistant`}>
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4" />
+          </svg>
+          {askLabel}
+        </button>
+      ) : null}
+      {renderTab(tabs[2])}
     </nav>
   )
 }
@@ -418,5 +437,245 @@ export function ThemeToggle() {
         </svg>
       )}
     </button>
+  )
+}
+
+// ── Sheet ───────────────────────────────────────────────────────────
+// The assistant layer: a bottom sheet OVER the current screen, so the
+// member never leaves where they are. Tap the grip or the backdrop to
+// dismiss. Deliberately no drag physics in v1 — the grip is a labeled
+// 3rem+ target, which this audience can actually find.
+export function Sheet({
+  open,
+  onClose,
+  label,
+  children,
+}: {
+  open: boolean
+  onClose: () => void
+  label: string
+  children: ReactNode
+}) {
+  if (!open) return null
+  return (
+    <div className="mns-sheet-backdrop" onClick={onClose}>
+      <div
+        className="mns-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button type="button" className="mns-sheet__grip" aria-label="Close" onClick={onClose} />
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ── AssistantChat ───────────────────────────────────────────────────
+// The conversation itself, transport-injected: the app supplies
+// `send(history)` (its own authed call to the platform agent) and this
+// component owns messages, dictation and spoken replies. Dictation
+// fills the box — the member still taps send, so a mis-hearing can
+// never submit anything by itself.
+interface AssistantMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+interface SpeechRecognitionLike {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  start(): void
+  stop(): void
+  onresult:
+    | ((event: {
+        results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>
+      }) => void)
+    | null
+  onend: (() => void) | null
+  onerror: (() => void) | null
+}
+
+function makeRecognizer(): SpeechRecognitionLike | null {
+  const w = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognitionLike
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike
+  }
+  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition
+  if (!Ctor) return null
+  const rec = new Ctor()
+  rec.lang = 'en-US'
+  rec.continuous = false
+  rec.interimResults = true
+  return rec
+}
+
+function speakAloud(text: string) {
+  if (!('speechSynthesis' in window)) return
+  window.speechSynthesis.cancel()
+  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
+}
+
+const MicIcon = () => (
+  <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="2" width="6" height="12" rx="3" />
+    <path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4" />
+  </svg>
+)
+
+export function AssistantChat({
+  send,
+  suggestions = [],
+  placeholder = 'Ask about your pools…',
+}: {
+  send: (messages: AssistantMessage[]) => Promise<string>
+  suggestions?: string[]
+  placeholder?: string
+}) {
+  const [messages, setMessages] = useState<AssistantMessage[]>([])
+  const [input, setInput] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [listening, setListening] = useState(false)
+  const [speakReplies, setSpeakReplies] = useState(false)
+  const speakRef = useRef(false)
+  speakRef.current = speakReplies
+  const recognizerRef = useRef<SpeechRecognitionLike | null>(null)
+  const [voiceSupported] = useState(() => typeof window !== 'undefined' && makeRecognizer() != null)
+  const endRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, busy])
+
+  const doSend = async (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed || busy) return
+    const next: AssistantMessage[] = [...messages, { role: 'user', content: trimmed }]
+    setMessages(next)
+    setInput('')
+    setBusy(true)
+    try {
+      const reply = await send(next)
+      setMessages([...next, { role: 'assistant', content: reply }])
+      if (speakRef.current) speakAloud(reply)
+    } catch (e) {
+      setMessages([
+        ...next,
+        {
+          role: 'assistant',
+          content:
+            e instanceof Error && e.message
+              ? `Something went wrong: ${e.message}`
+              : 'Something went wrong — try that again.',
+        },
+      ])
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const toggleMic = () => {
+    if (listening) {
+      recognizerRef.current?.stop()
+      return
+    }
+    const rec = makeRecognizer()
+    if (!rec) return
+    recognizerRef.current = rec
+    rec.onresult = (event) => {
+      let text = ''
+      for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript
+      setInput(text)
+    }
+    rec.onend = () => setListening(false)
+    rec.onerror = () => setListening(false)
+    setListening(true)
+    rec.start()
+  }
+
+  return (
+    <div className="mns-chat">
+      <div className="mns-chat__scroll">
+        {messages.length === 0
+          ? suggestions.map((s) => (
+              <button key={s} type="button" className="mns-chat__suggestion" onClick={() => void doSend(s)}>
+                {s}
+              </button>
+            ))
+          : messages.map((m, i) => (
+              <div
+                key={i}
+                className={
+                  'mns-chat__bubble ' +
+                  (m.role === 'user' ? 'mns-chat__bubble--user' : 'mns-chat__bubble--assistant')
+                }
+              >
+                {m.content}
+              </div>
+            ))}
+        {busy ? (
+          <div className="mns-chat__bubble mns-chat__bubble--assistant" style={{ color: 'var(--color-muted-foreground)' }}>
+            Checking your pools…
+          </div>
+        ) : null}
+        <div ref={endRef} />
+      </div>
+
+      <form
+        className="mns-chat__composer"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void doSend(input)
+        }}
+      >
+        <button
+          type="button"
+          className={'mns-chat__btn' + (speakReplies ? ' mns-chat__btn--active' : '')}
+          aria-pressed={speakReplies}
+          aria-label={speakReplies ? 'Stop reading replies aloud' : 'Read replies aloud'}
+          onClick={() => {
+            if (speakReplies && 'speechSynthesis' in window) window.speechSynthesis.cancel()
+            setSpeakReplies((s) => !s)
+          }}
+        >
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 5 6 9H2v6h4l5 4V5z" />
+            {speakReplies ? <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" /> : <path d="m16 9 6 6M22 9l-6 6" />}
+          </svg>
+        </button>
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              void doSend(input)
+            }
+          }}
+          rows={1}
+          placeholder={listening ? 'Listening…' : placeholder}
+          className="mns-chat__input"
+        />
+        {voiceSupported ? (
+          <button
+            type="button"
+            className={'mns-chat__btn' + (listening ? ' mns-chat__btn--active' : '')}
+            aria-pressed={listening}
+            aria-label={listening ? 'Stop listening' : 'Speak your question'}
+            onClick={toggleMic}
+          >
+            <MicIcon />
+          </button>
+        ) : null}
+        <button type="submit" className="mns-chat__btn mns-chat__btn--primary" aria-label="Send" disabled={busy || !input.trim()}>
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m22 2-7 20-4-9-9-4Z" />
+          </svg>
+        </button>
+      </form>
+    </div>
   )
 }
