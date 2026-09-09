@@ -553,6 +553,14 @@ export function AssistantChat({
   const doSend = async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed || busy) return
+    // Sending ends the dictation session, and deafens it first — a
+    // still-open recognizer fires one last onresult AFTER the box is
+    // cleared, refilling it with the old transcript and jamming the
+    // next recording. (Found by Sean's dad-test-in-waiting, 2026-09-09.)
+    if (recognizerRef.current) {
+      recognizerRef.current.onresult = null
+      recognizerRef.current.stop()
+    }
     const next: AssistantMessage[] = [...messages, { role: 'user', content: trimmed }]
     setMessages(next)
     setInput('')
