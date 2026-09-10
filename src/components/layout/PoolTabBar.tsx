@@ -24,6 +24,19 @@ export function PoolTabBar() {
   const qc = useQueryClient()
   const [askOpen, setAskOpen] = useState(false)
 
+  const tts = async (text: string): Promise<Blob | null> => {
+    const token = await getToken()
+    const res = await fetch(`${HUB}/api/tts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ text }),
+    })
+    return res.ok ? res.blob() : null
+  }
+
   const send = async (messages: Array<{ role: 'user' | 'assistant'; content: string }>) => {
     const token = await getToken()
     const res = await fetch(`${HUB}/api/chat`, {
@@ -52,7 +65,7 @@ export function PoolTabBar() {
           void qc.invalidateQueries()
         }}
       >
-        <AssistantChat send={send} suggestions={SUGGESTIONS} />
+        <AssistantChat send={send} tts={tts} suggestions={SUGGESTIONS} />
       </Sheet>
     </>
   )
