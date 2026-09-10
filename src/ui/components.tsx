@@ -519,6 +519,20 @@ function speakAloud(text: string) {
   window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
 }
 
+// What a voice should actually say: markdown syntax stripped, so
+// "**Giants +3.5**" reads as "Giants plus three and a half", not
+// "asterisk asterisk…". Applied to every voice path, custom or device.
+function speechText(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#+\s*/gm, '')
+    .replace(/^\s*[-*•]\s+/gm, '')
+}
+
 const MicIcon = () => (
   <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="9" y="2" width="6" height="12" rx="3" />
@@ -593,7 +607,8 @@ export function AssistantChat({
     }
   }
 
-  const speakReply = async (text: string) => {
+  const speakReply = async (raw: string) => {
+    const text = speechText(raw)
     audioRef.current?.pause()
     if (ttsRef.current) {
       try {
