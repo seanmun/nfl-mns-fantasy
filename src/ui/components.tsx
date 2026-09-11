@@ -703,35 +703,45 @@ export function AssistantChat({
           void doSend(input)
         }}
       >
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void doSend(input)
-            }
-          }}
-          rows={1}
-          placeholder={listening ? 'Listening…' : placeholder}
-          className="mns-chat__input"
-        />
-        {voiceSupported ? (
-          <button
-            type="button"
-            className={'mns-chat__btn' + (listening ? ' mns-chat__btn--active' : '')}
-            aria-pressed={listening}
-            aria-label={listening ? 'Stop listening' : 'Speak your question'}
-            onClick={toggleMic}
-          >
-            <MicIcon />
-          </button>
-        ) : null}
-        <button type="submit" className="mns-chat__btn mns-chat__btn--primary" aria-label="Send" disabled={busy || !input.trim()}>
-          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m22 2-7 20-4-9-9-4Z" />
-          </svg>
-        </button>
+        {/* One rounded panel, input on top, actions tucked inside —
+            the shape every modern chat has trained thumbs for. */}
+        <div className="mns-chat__box">
+          <textarea
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value)
+              e.target.style.height = 'auto'
+              e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void doSend(input)
+              }
+            }}
+            rows={2}
+            placeholder={listening ? 'Listening…' : placeholder}
+            className="mns-chat__input"
+          />
+          <div className="mns-chat__actions">
+            {voiceSupported ? (
+              <button
+                type="button"
+                className={'mns-chat__btn' + (listening ? ' mns-chat__btn--active' : '')}
+                aria-pressed={listening}
+                aria-label={listening ? 'Stop listening' : 'Speak your question'}
+                onClick={toggleMic}
+              >
+                <MicIcon />
+              </button>
+            ) : null}
+            <button type="submit" className="mns-chat__btn mns-chat__btn--primary mns-chat__btn--send" aria-label="Send" disabled={busy || !input.trim()}>
+              <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m22 2-7 20-4-9-9-4Z" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </form>
     </div>
   )
