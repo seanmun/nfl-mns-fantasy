@@ -123,8 +123,11 @@ textarea.mns-input { padding: 0.75rem 1rem; line-height: 1.5; min-height: 6rem; 
 
 /* ── AssistantChat ── */
 .mns-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 0 1rem 0.75rem; }
-.mns-chat__scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.25rem 0 0.75rem; }
-.mns-chat__bubble { max-width: 85%; border-radius: 1rem; padding: 0.6rem 0.9rem; white-space: pre-wrap; line-height: 1.5; font-size: 0.95rem; }
+.mns-chat__bar { display: flex; justify-content: flex-end; padding: 0.25rem 0 0.5rem; }
+.mns-chat__voice { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2.5rem; padding: 0 0.9rem; border-radius: 999px; border: 1px solid var(--color-border-interactive); background: transparent; color: var(--color-muted-foreground); font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+.mns-chat__voice--on { border-color: var(--color-accent); color: var(--color-accent); }
+.mns-chat__scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.85rem; padding: 0.25rem 0 1rem; }
+.mns-chat__bubble { max-width: 92%; border-radius: 1rem; padding: 0.75rem 1rem; white-space: pre-wrap; line-height: 1.6; font-size: 1rem; }
 .mns-chat__bubble--user { align-self: flex-end; background: var(--color-accent); color: var(--color-accent-foreground); }
 .mns-chat__bubble--assistant { align-self: flex-start; background: var(--color-card); border: 1px solid var(--color-border); color: var(--color-foreground); }
 .mns-chat__suggestion { text-align: left; border: 1px solid var(--color-border-interactive); background: var(--color-card); color: var(--color-foreground); border-radius: 0.75rem; padding: 0.7rem 1rem; min-height: 3rem; cursor: pointer; }

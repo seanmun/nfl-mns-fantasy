@@ -649,6 +649,27 @@ export function AssistantChat({
 
   return (
     <div className="mns-chat">
+      {/* Voice preference lives up top, out of the composer's way. */}
+      <div className="mns-chat__bar">
+        <button
+          type="button"
+          className={'mns-chat__voice' + (speakReplies ? ' mns-chat__voice--on' : '')}
+          aria-pressed={speakReplies}
+          onClick={() => {
+            if (speakReplies) {
+              if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+              audioRef.current?.pause()
+            }
+            setSpeakReplies((s) => !s)
+          }}
+        >
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 5 6 9H2v6h4l5 4V5z" />
+            {speakReplies ? <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" /> : <path d="m16 9 6 6M22 9l-6 6" />}
+          </svg>
+          {speakReplies ? 'Voice on' : 'Voice off'}
+        </button>
+      </div>
       <div className="mns-chat__scroll">
         {messages.length === 0
           ? suggestions.map((s) => (
@@ -682,24 +703,6 @@ export function AssistantChat({
           void doSend(input)
         }}
       >
-        <button
-          type="button"
-          className={'mns-chat__btn' + (speakReplies ? ' mns-chat__btn--active' : '')}
-          aria-pressed={speakReplies}
-          aria-label={speakReplies ? 'Stop reading replies aloud' : 'Read replies aloud'}
-          onClick={() => {
-            if (speakReplies) {
-              if ('speechSynthesis' in window) window.speechSynthesis.cancel()
-              audioRef.current?.pause()
-            }
-            setSpeakReplies((s) => !s)
-          }}
-        >
-          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 5 6 9H2v6h4l5 4V5z" />
-            {speakReplies ? <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" /> : <path d="m16 9 6 6M22 9l-6 6" />}
-          </svg>
-        </button>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
