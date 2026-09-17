@@ -54,10 +54,15 @@ export function PoolTabBar() {
 
   return (
     <>
-      <BottomTabBar basePath={`/pool/${poolId}`} onAsk={() => setAskOpen(true)} />
+      {/* Bump is Bumper's nickname — the hub assistant's persona. */}
+      <BottomTabBar
+        basePath={`/pool/${poolId}`}
+        onAsk={() => setAskOpen(true)}
+        askLabel="Ask Bump"
+      />
       <Sheet
         open={askOpen}
-        label="Assistant"
+        label="Ask Bump"
         onClose={() => {
           setAskOpen(false)
           // The agent may have saved or submitted picks — make the page
@@ -65,7 +70,12 @@ export function PoolTabBar() {
           void qc.invalidateQueries()
         }}
       >
-        <AssistantChat send={send} tts={tts} suggestions={SUGGESTIONS} />
+        <AssistantChat
+          send={send}
+          tts={tts}
+          suggestions={SUGGESTIONS}
+          placeholder="Ask Bump about your pools…"
+        />
       </Sheet>
     </>
   )

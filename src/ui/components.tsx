@@ -239,7 +239,9 @@ export function BottomTabBar({
       {renderTab(tabs[0])}
       {renderTab(tabs[1])}
       {onAsk ? (
-        <button type="button" className="mns-tab-ask" onClick={onAsk} aria-label={`${askLabel} the assistant`}>
+        // The visible label is the name ("Ask Bump") — no aria-label to
+        // drift from what the member reads.
+        <button type="button" className="mns-tab-ask" onClick={onAsk}>
           <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="9" y="2" width="6" height="12" rx="3" />
             <path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4" />
@@ -490,13 +492,39 @@ interface SpeechRecognitionLike {
   interimResults: boolean
   start(): void
   stop(): void
+  abort(): void
   onresult:
     | ((event: {
         results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>
       }) => void)
     | null
   onend: (() => void) | null
-  onerror: (() => void) | null
+  onerror: ((event: { error: string }) => void) | null
+}
+
+// Detach a recognizer and end it, so nothing it fires later — a last
+// result, a late onend — can touch the box or the mic state.
+function retire(rec: SpeechRecognitionLike | null) {
+  if (!rec) return
+  rec.onresult = null
+  rec.onend = null
+  rec.onerror = null
+  try {
+    rec.abort()
+  } catch {
+    /* already ended */
+  }
+}
+
+// What a failed recording tells the member, in words. 'aborted' is
+// ours (a retire), so it says nothing.
+function micProblem(error: string): string | null {
+  if (error === 'aborted') return null
+  if (error === 'no-speech') return "Didn't hear anything — tap the mic and try again."
+  if (error === 'not-allowed' || error === 'service-not-allowed')
+    return "The microphone is blocked. Allow it for this site in your phone's settings, then tap the mic again."
+  if (error === 'audio-capture') return 'No microphone was found.'
+  return "Voice didn't work that time — tap the mic to try again."
 }
 
 function makeRecognizer(): SpeechRecognitionLike | null {
@@ -565,12 +593,27 @@ export function AssistantChat({
   ttsRef.current = tts
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const recognizerRef = useRef<SpeechRecognitionLike | null>(null)
+  // Bumps on every mic tap, so a spoken reply still being generated
+  // when the member starts talking never plays over their recording.
+  const speechSeq = useRef(0)
+  const [micNote, setMicNote] = useState<string | null>(null)
   const [voiceSupported] = useState(() => typeof window !== 'undefined' && makeRecognizer() != null)
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, busy])
+
+  // Closing the sheet ends everything — a recognizer or a voice left
+  // running behind a closed sheet blocks the next one.
+  useEffect(
+    () => () => {
+      retire(recognizerRef.current)
+      audioRef.current?.pause()
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+    },
+    []
+  )
 
   const doSend = async (text: string) => {
     const trimmed = text.trim()
@@ -579,10 +622,13 @@ export function AssistantChat({
     // still-open recognizer fires one last onresult AFTER the box is
     // cleared, refilling it with the old transcript and jamming the
     // next recording. (Found by Sean's dad-test-in-waiting, 2026-09-09.)
-    if (recognizerRef.current) {
-      recognizerRef.current.onresult = null
-      recognizerRef.current.stop()
-    }
+    // The mic flag is cleared HERE, not left to onend: phones don't
+    // always fire onend, and a stuck "listening" turned every later mic
+    // tap into a stop of a dead session — the mic worked once per sheet.
+    retire(recognizerRef.current)
+    recognizerRef.current = null
+    setListening(false)
+    setMicNote(null)
     const next: AssistantMessage[] = [...messages, { role: 'user', content: trimmed }]
     setMessages(next)
     setInput('')
@@ -610,9 +656,12 @@ export function AssistantChat({
   const speakReply = async (raw: string) => {
     const text = speechText(raw)
     audioRef.current?.pause()
+    const seq = speechSeq.current
     if (ttsRef.current) {
       try {
         const blob = await ttsRef.current(text)
+        // The member tapped the mic while the voice was generating.
+        if (seq !== speechSeq.current) return
         if (blob) {
           const url = URL.createObjectURL(blob)
           const audio = new Audio(url)
@@ -628,23 +677,61 @@ export function AssistantChat({
     speakAloud(text)
   }
 
-  const toggleMic = () => {
-    if (listening) {
-      recognizerRef.current?.stop()
-      return
-    }
+  // Every tap starts a FRESH recording, whatever the last one left
+  // behind. Nothing here trusts a previous session to have ended.
+  const startListening = () => {
+    retire(recognizerRef.current)
+    // Phones can't reliably record while playing audio: silence the
+    // reply first, including one still being generated.
+    speechSeq.current++
+    audioRef.current?.pause()
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+
     const rec = makeRecognizer()
     if (!rec) return
     recognizerRef.current = rec
+    // Events from a retired recognizer never reach the state.
+    const mine = () => recognizerRef.current === rec
     rec.onresult = (event) => {
+      if (!mine()) return
       let text = ''
-      for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript
+      let final = false
+      for (let i = 0; i < event.results.length; i++) {
+        text += event.results[i][0].transcript
+        if (event.results[i].isFinal) final = true
+      }
       setInput(text)
+      // One utterance per tap: a final result IS the end, whether or not
+      // the phone gets round to firing onend.
+      if (final) setListening(false)
     }
-    rec.onend = () => setListening(false)
-    rec.onerror = () => setListening(false)
+    // No start timeout on purpose: the first tap can sit behind the
+    // phone's microphone permission prompt for as long as it likes.
+    rec.onend = () => {
+      if (mine()) setListening(false)
+    }
+    rec.onerror = (event) => {
+      if (!mine()) return
+      setListening(false)
+      setMicNote(micProblem(event.error))
+    }
+    setMicNote(null)
     setListening(true)
-    rec.start()
+    try {
+      rec.start()
+    } catch {
+      recognizerRef.current = null
+      setListening(false)
+      setMicNote("Voice didn't start — tap the mic to try again.")
+    }
+  }
+
+  const toggleMic = () => {
+    if (!listening) return startListening()
+    // stop, not retire: the last words still land in the box. The flag
+    // clears now rather than waiting on an onend that may never come.
+    recognizerRef.current?.stop()
+    setListening(false)
   }
 
   return (
@@ -696,6 +783,11 @@ export function AssistantChat({
         <div ref={endRef} />
       </div>
 
+      {micNote ? (
+        <p className="mns-chat__note" role="status">
+          {micNote}
+        </p>
+      ) : null}
       <form
         className="mns-chat__composer"
         onSubmit={(e) => {
@@ -710,6 +802,7 @@ export function AssistantChat({
             value={input}
             onChange={(e) => {
               setInput(e.target.value)
+              setMicNote(null)
               e.target.style.height = 'auto'
               e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'
             }}
