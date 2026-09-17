@@ -2,9 +2,15 @@ import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createApi, type ApiOtherPick, type ApiSlateGame, type SavePick } from '@/lib/api/client'
+import {
+  createApi,
+  type ApiOtherPick,
+  type ApiPick,
+  type ApiSlateGame,
+  type SavePick,
+} from '@/lib/api/client'
 import { useAutoSave } from '@/hooks/useAutoSave'
-import { kickoffLabel, dayLabel, teamSpread } from '@/lib/utils'
+import { kickoffLabel, dayLabel, pickStanding, teamSpread, TONE_COLOR } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
 
@@ -150,6 +156,10 @@ export function PoolPicks() {
   const have = picks.size
   const keyChosen = [...picks.values()].some((p) => p.isKey)
   const wantsKey = data.pool.keyPick
+  // A key on a game that has kicked off is settled — the server carries
+  // it through unchanged — so no other card offers to take it.
+  const openByGame = new Map(data.slate.map((g) => [g.gameId, g.open]))
+  const keyLocked = [...picks].some(([gameId, v]) => v.isKey && openByGame.get(gameId) === false)
 
   const toggleTeam = (game: ApiSlateGame, teamId: string) => {
     if (!game.open) return
@@ -281,12 +291,13 @@ export function PoolPicks() {
               picked={picks.get(game.gameId)}
               spreadMode={data.pool.spreadMode}
               wantsKey={wantsKey}
+              keyLocked={keyLocked}
               atLimit={need != null && have >= need && !picks.has(game.gameId)}
               counts={countsByGame.get(game.gameId) ?? null}
-              myLine={
+              saved={
                 data.myPicks.find(
                   (p) => p.entryId === activeEntry && p.gameId === game.gameId
-                )?.lineSpreadAtPick ?? null
+                ) ?? null
               }
               onPick={(teamId) => toggleTeam(game, teamId)}
               onKey={() => setKey(game.gameId)}
@@ -373,9 +384,10 @@ function GameCard({
   picked,
   spreadMode,
   wantsKey,
+  keyLocked,
   atLimit,
   counts,
-  myLine,
+  saved,
   onPick,
   onKey,
 }: {
@@ -383,42 +395,38 @@ function GameCard({
   picked?: { teamId: string; isKey: boolean }
   spreadMode: 'straight_up' | 'ats'
   wantsKey: boolean
+  // The key already sits on a game that has kicked off — it can't move.
+  keyLocked: boolean
   atLimit: boolean
   // Entries on each side, post-reveal only; null before the deadline.
   counts: Map<string, number> | null
-  // The line the caller's SAVED pick grades on, when it differs from
-  // the current number (post-publish admin fix). Null otherwise.
-  myLine: number | null
+  // The caller's SAVED pick on this game: the line it grades on (which
+  // can differ from the current number after an admin fix) and its
+  // result. Null when there is none.
+  saved: ApiPick | null
   onPick: (teamId: string) => void
   onKey: () => void
 }) {
   const fmtLine = (v: number | null) =>
     v == null ? 'off board' : v > 0 ? `+${v}` : `${v}`
   const lastChange = game.lineEvents[game.lineEvents.length - 1]
+  const myLine = saved?.lineSpreadAtPick ?? null
+  const scored = game.status === 'in_progress' || game.status === 'final'
+  const standing = saved ? pickStanding(saved, game, spreadMode) : null
+  // Locked cards stay at full strength — scores are the point of them.
+  // Lock is carried by the 🔒 Locked label and the tiles losing their
+  // tappable border, never by fading the whole card.
   return (
-    <article
-      className={
-        'mx-4 my-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] overflow-hidden ' +
-        (game.open ? '' : 'opacity-60')
-      }
-    >
+    <article className="mx-4 my-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-3 py-2 text-[0.85rem] text-[var(--color-muted-foreground)] border-b border-[var(--color-border)]">
-        {game.status === 'in_progress' || game.status === 'final' ? (
-          // Kickoff time gives way to the score once there is one.
-          <span className="font-mono font-bold tabular-nums text-[var(--color-foreground)]">
-            {game.away?.nickname} {game.awayScore ?? 0} &ndash; {game.homeScore ?? 0}{' '}
-            {game.home?.nickname}
-            <span
-              className={
-                'ml-2 uppercase tracking-wider text-[0.72rem] ' +
-                (game.status === 'final'
-                  ? 'text-[var(--color-muted-foreground)]'
-                  : 'text-[var(--color-accent)]')
-              }
-            >
-              {game.status === 'final' ? 'Final' : 'Live'}
-            </span>
-          </span>
+        {game.status === 'final' ? (
+          <b className="uppercase tracking-wider text-[0.78rem] text-[var(--color-foreground)]">
+            Final
+          </b>
+        ) : game.status === 'in_progress' ? (
+          <b className="uppercase tracking-wider text-[0.78rem] text-[var(--color-game-live)]">
+            Live
+          </b>
         ) : game.status === 'postponed' || game.status === 'cancelled' ? (
           <span className="font-bold uppercase tracking-wider text-[0.72rem]">{game.status}</span>
         ) : (
@@ -448,18 +456,32 @@ function GameCard({
         // Right side is home → the left team travels: "at". Otherwise
         // the favorite hosts: "vs".
         const connector = rightSide === 'home' ? 'at' : 'vs'
-        const btn = (team: typeof left, side: 'home' | 'away') => (
-          <TeamButton
-            team={team}
-            spread={
-              spreadMode === 'ats' && !game.offBoard ? teamSpread(game.spread, side) : null
-            }
-            selected={picked?.teamId === team?.id}
-            disabled={!game.open || (atLimit && picked?.teamId !== team?.id)}
-            pickCount={counts && team ? counts.get(team.id) ?? 0 : null}
-            onClick={() => team && onPick(team.id)}
-          />
-        )
+        const scoreOf = (side: 'home' | 'away') =>
+          scored ? (side === 'home' ? game.homeScore : game.awayScore) ?? 0 : null
+        const btn = (team: typeof left, side: 'home' | 'away') => {
+          const mine = scoreOf(side)
+          const theirs = scoreOf(side === 'home' ? 'away' : 'home')
+          const isPicked = picked?.teamId === team?.id
+          return (
+            <TeamButton
+              team={team}
+              spread={
+                spreadMode === 'ats' && !game.offBoard ? teamSpread(game.spread, side) : null
+              }
+              selected={isPicked}
+              locked={!game.open}
+              disabled={!game.open || (atLimit && !isPicked)}
+              score={mine}
+              // Once final, the losing side's score steps back.
+              scoreMuted={
+                game.status === 'final' && mine != null && theirs != null && mine < theirs
+              }
+              standing={isPicked ? standing : null}
+              pickCount={counts && team ? counts.get(team.id) ?? 0 : null}
+              onClick={() => team && onPick(team.id)}
+            />
+          )
+        }
         return (
           <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 p-2.5">
             {btn(left, leftSide)}
@@ -486,7 +508,16 @@ function GameCard({
         </p>
       ) : null}
 
-      {wantsKey && picked ? (
+      {wantsKey && picked && !game.open ? (
+        // A kicked-off game's key status is settled: a label, not a
+        // button that would fail (moving it off) or silently not save
+        // (moving it on).
+        picked.isKey ? (
+          <p className="border-t border-[var(--color-border)] px-3 py-2.5 font-bold tracking-wide text-[var(--color-key)]">
+            ★ Key pick &middot; locked in
+          </p>
+        ) : null
+      ) : wantsKey && picked && !keyLocked ? (
         <div className="border-t border-[var(--color-border)] p-2.5">
           <button
             onClick={onKey}
@@ -510,14 +541,25 @@ function TeamButton({
   team,
   spread,
   selected,
+  locked,
   disabled,
+  score,
+  scoreMuted,
+  standing,
   pickCount,
   onClick,
 }: {
   team: ApiSlateGame['home']
   spread: string | null
   selected: boolean
+  // The game has kicked off or the week has closed.
+  locked: boolean
   disabled: boolean
+  // This side's score once the game is live or final; null before.
+  score: number | null
+  scoreMuted: boolean
+  // How the caller's pick on this side stands — WON, AHEAD… — or null.
+  standing: { word: string; tone: 'win' | 'loss' | 'push' } | null
   // Post-reveal: how many entries took this side. Null pre-deadline —
   // showing the split while picks are open would tilt the picking.
   pickCount: number | null
@@ -533,8 +575,13 @@ function TeamButton({
         'relative flex flex-col justify-center gap-0.5 min-h-16 py-2.5 pl-3.5 pr-2.5 rounded-lg border-2 text-left ' +
         (selected
           ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)]'
-          : 'border-[var(--color-border-interactive)] bg-[var(--color-muted)]') +
-        (disabled ? ' opacity-45' : '')
+          : locked
+            ? // Hairline, not the tappable border: "can't tap" without
+              // fading the names and scores.
+              'border-[var(--color-border)] bg-[var(--color-muted)]'
+            : 'border-[var(--color-border-interactive)] bg-[var(--color-muted)]') +
+        // Only the at-your-limit state fades; a locked game never does.
+        (disabled && !locked ? ' opacity-45' : '')
       }
     >
       <span
@@ -542,7 +589,19 @@ function TeamButton({
         className="absolute left-0 top-0 bottom-0 w-[5px] rounded-l-md"
         style={{ background: team.primaryColor ?? 'var(--color-border-interactive)' }}
       />
-      <span className="font-bold">{team.nickname}</span>
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 font-bold">{team.nickname}</span>
+        {score != null ? (
+          <span
+            className={
+              'shrink-0 text-[1.5rem] font-extrabold leading-none tabular-nums ' +
+              (scoreMuted ? 'text-[var(--color-muted-foreground)]' : '')
+            }
+          >
+            {score}
+          </span>
+        ) : null}
+      </span>
       {spread ? (
         <span
           className={
@@ -553,12 +612,22 @@ function TeamButton({
           {spread}
         </span>
       ) : null}
+      {/* Once there's a score, the pick is named in words on the tile —
+          the ✓ corner badge would sit on top of the score. */}
+      {selected && score != null ? (
+        <span
+          className="text-[0.78rem] font-extrabold tracking-wider"
+          style={{ color: standing ? TONE_COLOR[standing.tone] : 'var(--color-foreground)' }}
+        >
+          &#10003; {standing?.word ?? 'YOUR PICK'}
+        </span>
+      ) : null}
       {pickCount != null ? (
         <span className="text-[0.78rem] text-[var(--color-muted-foreground)] tabular-nums">
           {pickCount === 1 ? '1 entry picked' : `${pickCount} entries picked`}
         </span>
       ) : null}
-      {selected ? (
+      {selected && score == null ? (
         <span className="absolute top-1.5 right-2 w-6 h-6 rounded-full bg-[var(--color-accent)] text-[var(--color-background)] font-black text-center leading-6">
           &#10003;
         </span>

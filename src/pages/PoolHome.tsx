@@ -10,7 +10,7 @@ import {
   type PicksResponse,
   type StandingsRow,
 } from '@/lib/api/client'
-import { kickoffLabel } from '@/lib/utils'
+import { kickoffLabel, pickStanding, teamSpread, TONE_COLOR } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
 import {
@@ -231,9 +231,11 @@ export function PoolHome() {
         </Card>
       ) : null}
 
-      {/* Second entries are explicit and named — never a side effect. */}
-      {data.pool.maxEntriesPerUser == null ||
-      data.entries.length < data.pool.maxEntriesPerUser ? (
+      {/* Second entries are explicit and named — never a side effect.
+          Gone once the pool is closed to new entries. */}
+      {data.pool.entriesOpen &&
+      (data.pool.maxEntriesPerUser == null ||
+        data.entries.length < data.pool.maxEntriesPerUser) ? (
         addingName == null ? (
           <button
             onClick={() => setAddingName('')}
@@ -460,11 +462,27 @@ function EntryHero({
   onRenameCancel: () => void
   renamePending: boolean
 }) {
-  const mine = data.myPicks.filter((p) => p.entryId === entry.id)
+  const gameById = new Map(data.slate.map((g) => [g.gameId, g]))
+  // Kickoff order, so the list reads the way the week plays out.
+  const kickoffOf = (gameId: string) => gameById.get(gameId)?.kickoffAt ?? ''
+  const mine = data.myPicks
+    .filter((p) => p.entryId === entry.id)
+    .sort((a, b) => kickoffOf(a.gameId).localeCompare(kickoffOf(b.gameId)))
   const hasKey = mine.some((p) => p.isKeyPick)
   const anyAuto = mine.some((p) => p.isAuto)
   const complete = mine.length >= need && (!data.pool.keyPick || hasKey)
-  const gameById = new Map(data.slate.map((g) => [g.gameId, g]))
+  const pickList = (
+    <div className="flex flex-col gap-2">
+      {mine.map((p) => (
+        <PickChip
+          key={p.id}
+          pick={p}
+          game={gameById.get(p.gameId)}
+          spreadMode={data.pool.spreadMode}
+        />
+      ))}
+    </div>
+  )
 
   return (
     <Card hero className="flex flex-col gap-3">
@@ -528,6 +546,9 @@ function EntryHero({
               )}
             </p>
           )}
+          {/* The same list the locked week shows, lock state per game —
+              a Thursday pick reads 🔒 while Sunday's still read 🔓. */}
+          {mine.length ? pickList : null}
           <Button to={`/pool/${poolId}/picks`} full>
             {mine.length === 0
               ? 'Make my picks'
@@ -549,14 +570,11 @@ function EntryHero({
               Some picks were filled by the app at the deadline — marked below.
             </p>
           ) : null}
-          <div className="flex flex-col gap-2">
-            {mine.map((p) => (
-              <PickChip key={p.id} pick={p} game={gameById.get(p.gameId)} />
-            ))}
-            {mine.length === 0 ? (
-              <p className="text-[var(--color-muted-foreground)]">No picks made this week.</p>
-            ) : null}
-          </div>
+          {mine.length ? (
+            pickList
+          ) : (
+            <p className="text-[var(--color-muted-foreground)]">No picks made this week.</p>
+          )}
           <Button to={`/pool/${poolId}/picks`} variant="quiet" full>
             {anyLive ? 'Watch the week live' : 'See the full week'}
           </Button>
@@ -566,50 +584,70 @@ function EntryHero({
   )
 }
 
-// One picked game as a live chip: my team, the score, and whether the
-// pick is winning right now (or won). Colour never carries the meaning
-// alone — the state word is always printed.
-function PickChip({ pick, game }: { pick: ApiPick; game: ApiSlateGame | undefined }) {
+// One picked game: lock icon, my team and its number, the state word,
+// then the score or the kickoff underneath. The same row all week —
+// open, locked, live, graded. The state is always a printed word
+// (OPEN, LOCKED, AHEAD, WON…), never the icon or colour alone.
+function PickChip({
+  pick,
+  game,
+  spreadMode,
+}: {
+  pick: ApiPick
+  game: ApiSlateGame | undefined
+  spreadMode: 'straight_up' | 'ats'
+}) {
   if (!game) return null
-  const myTeam = pick.selectedTeamId === game.home?.id ? game.home : game.away
-  const oppTeam = pick.selectedTeamId === game.home?.id ? game.away : game.home
-  const myScore = pick.selectedTeamId === game.home?.id ? game.homeScore : game.awayScore
-  const oppScore = pick.selectedTeamId === game.home?.id ? game.awayScore : game.homeScore
+  const isHome = pick.selectedTeamId === game.home?.id
+  const myTeam = isHome ? game.home : game.away
+  const oppTeam = isHome ? game.away : game.home
+  const myScore = isHome ? game.homeScore : game.awayScore
+  const oppScore = isHome ? game.awayScore : game.homeScore
+  // The number this pick grades on, from my team's side.
+  const line =
+    spreadMode === 'ats'
+      ? teamSpread(pick.lineSpreadAtPick ?? game.spread, isHome ? 'home' : 'away')
+      : null
 
-  let state: { word: string; cls: string } | null = null
-  if (pick.result === 'win') state = { word: 'WON', cls: 'text-[var(--color-pick-win)]' }
-  else if (pick.result === 'loss') state = { word: 'LOST', cls: 'text-[var(--color-pick-loss)]' }
-  else if (pick.result === 'push') state = { word: 'PUSH', cls: 'text-[var(--color-pick-push)]' }
-  else if (game.status === 'in_progress' && myScore != null && oppScore != null) {
-    state =
-      myScore > oppScore
-        ? { word: 'AHEAD', cls: 'text-[var(--color-pick-win)]' }
-        : myScore < oppScore
-          ? { word: 'BEHIND', cls: 'text-[var(--color-pick-loss)]' }
-          : { word: 'TIED', cls: 'text-[var(--color-pick-push)]' }
-  }
+  const standing = pickStanding(pick, game, spreadMode)
+  const state = standing
+    ? { word: standing.word, color: TONE_COLOR[standing.tone] }
+    : game.open
+      ? { word: 'OPEN', color: 'var(--color-accent)' }
+      : // muted-foreground, not --color-locked: 4.34 on this tile in light.
+        { word: 'LOCKED', color: 'var(--color-muted-foreground)' }
+
+  const detail =
+    game.status === 'in_progress' || game.status === 'final'
+      ? `${myScore ?? 0}–${oppScore ?? 0} vs ${oppTeam?.nickname ?? ''} · ${game.status === 'final' ? 'Final' : 'Live'}`
+      : game.status === 'postponed' || game.status === 'cancelled'
+        ? `vs ${oppTeam?.nickname ?? ''} · ${game.status}`
+        : `vs ${oppTeam?.nickname ?? ''} · ${game.kickoffTbd ? 'Time TBA' : kickoffLabel(game.kickoffAt)}`
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--color-muted)] px-3 py-2 tabular-nums">
-      <span className="font-bold">
-        {pick.isKeyPick ? <span className="text-[var(--color-key)]">★ </span> : null}
-        {myTeam?.nickname ?? pick.selectedTeamId}
-        {pick.isAuto ? (
-          <span className="ml-1.5 text-[0.7rem] uppercase tracking-wider text-[var(--color-muted-foreground)]">
-            auto
-          </span>
-        ) : null}
+    <div className="flex items-center gap-3 rounded-lg bg-[var(--color-muted)] px-3 py-2 tabular-nums">
+      <span aria-hidden="true" className="shrink-0 text-[1.1rem] leading-none">
+        {game.open ? '\u{1F513}' : '\u{1F512}'}
       </span>
-      <span className="text-[0.95rem] text-[var(--color-muted-foreground)]">
-        {game.status === 'scheduled'
-          ? kickoffLabel(game.kickoffAt)
-          : `${myScore ?? 0}–${oppScore ?? 0} ${oppTeam ? `vs ${oppTeam.nickname}` : ''}`}
-        {state ? <b className={`ml-2 ${state.cls}`}>{state.word}</b> : null}
-        {game.status === 'in_progress' ? (
-          <span className="ml-1 text-[0.72rem] uppercase tracking-wider text-[var(--color-accent)]">
-            live
-          </span>
-        ) : null}
+      <span className="flex-1 min-w-0">
+        <span className="flex items-baseline justify-between gap-2">
+          <b className="min-w-0 truncate">
+            {pick.isKeyPick ? <span className="text-[var(--color-key)]">★ </span> : null}
+            {myTeam?.nickname ?? pick.selectedTeamId}
+            {line ? (
+              <span className="ml-1.5 font-mono text-[0.9rem] text-[var(--color-muted-foreground)]">
+                {line}
+              </span>
+            ) : null}
+          </b>
+          <b className="shrink-0 text-[0.8rem] tracking-wider" style={{ color: state.color }}>
+            {state.word}
+          </b>
+        </span>
+        <span className="block text-[0.85rem] text-[var(--color-muted-foreground)]">
+          {detail}
+          {pick.isAuto ? ' · auto-pick' : ''}
+        </span>
       </span>
     </div>
   )

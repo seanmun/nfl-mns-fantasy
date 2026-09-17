@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq, isNotNull } from 'drizzle-orm'
 import { db } from './_db.js'
 import { isAdmin, verifyAuth } from './_middleware.js'
 import { nflPoolEntries, nflPoolWeeks, nflPools, type NflPool } from '../src/lib/db/schema.js'
@@ -74,6 +74,40 @@ export async function othersPicksVisible(poolId: string, weekId: string): Promis
     .limit(1)
   if (!pw?.deadline) return false
   return new Date() >= pw.deadline
+}
+
+// Whether the pool still takes NEW entries — null when it does. Join
+// enforces this, and the pool home reads the same answer to hide "Add
+// another entry" rather than offer a button that can only fail.
+export async function entriesClosed(
+  pool: NflPool
+): Promise<{ status: number; error: string } | null> {
+  // Entries stay open until the FIRST PICK LOCK — the earliest pick
+  // deadline the pool has committed to — not the first kickoff. A pool
+  // with nothing published yet is always open.
+  if (!pool.allowLateJoin) {
+    const [first] = await db
+      .select({ deadline: nflPoolWeeks.pickDeadlineAt })
+      .from(nflPoolWeeks)
+      .where(and(eq(nflPoolWeeks.poolId, pool.id), isNotNull(nflPoolWeeks.pickDeadlineAt)))
+      .orderBy(asc(nflPoolWeeks.pickDeadlineAt))
+      .limit(1)
+    if (first?.deadline && new Date() >= first.deadline) {
+      return { status: 403, error: 'This pool has already started and is closed to new entries.' }
+    }
+  }
+
+  if (pool.maxEntries != null) {
+    const all = await db
+      .select({ id: nflPoolEntries.id })
+      .from(nflPoolEntries)
+      .where(eq(nflPoolEntries.poolId, pool.id))
+    if (all.length >= pool.maxEntries) {
+      return { status: 409, error: 'This pool is full.' }
+    }
+  }
+
+  return null
 }
 
 // Join codes are read aloud and typed by people who did not choose them,

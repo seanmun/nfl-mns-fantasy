@@ -96,6 +96,9 @@ export interface PicksResponse {
     startWeek: number
     endWeek: number
     maxEntriesPerUser: number | null
+    // False once the pool takes no new entries — started (late join
+    // off) or full.
+    entriesOpen: boolean
   }
   manager: boolean
   week: { id: string; week: number; label: string }

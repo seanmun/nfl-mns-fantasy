@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../_db.js'
-import { applyCors, loadCtx, othersPicksVisible } from '../../_pool.js'
+import { applyCors, entriesClosed, loadCtx, othersPicksVisible } from '../../_pool.js'
 import {
   nflEntryWeeks,
   nflGames,
@@ -327,6 +327,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Null means uncapped. The pool home uses it to decide whether
       // "Add another entry" is on the table at all.
       maxEntriesPerUser: pool.maxEntriesPerUser,
+      // False once the pool is closed to new entries (started with late
+      // join off, or full) — join's own rule, so the button and the
+      // endpoint cannot disagree.
+      entriesOpen: (await entriesClosed(pool)) == null,
     },
     // Whether the CALLER runs this pool, not a fact about the pool.
     manager: ctx.isPoolAdmin,

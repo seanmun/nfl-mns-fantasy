@@ -1,15 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { and, asc, eq, ilike, isNotNull } from 'drizzle-orm'
+import { and, eq, ilike } from 'drizzle-orm'
 import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import { ensureUser } from '../_ensureUser.js'
-import { applyCors } from '../_pool.js'
-import {
-  nflPoolEntries,
-  nflPoolInvites,
-  nflPools,
-  nflPoolWeeks,
-} from '../../src/lib/db/schema.js'
+import { applyCors, entriesClosed } from '../_pool.js'
+import { nflPoolEntries, nflPoolInvites, nflPools } from '../../src/lib/db/schema.js'
 
 // GET  /api/pools/join?q=      — search public pools
 // POST /api/pools/join         — join by code, invite token, or pool id
@@ -118,25 +113,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ pool, entry: { id: mine[0].id }, alreadyMember: true })
     }
 
-    // ── Late join ────────────────────────────────────────────────
-    // Entries stay open until the FIRST PICK LOCK — the earliest pick
-    // deadline the pool has committed to — not the first kickoff. A
-    // pool with nothing published yet is always open. Checked only once
-    // we know a NEW entry is being created — an existing member landing
-    // back in their pool is not a late join.
-    if (!pool.allowLateJoin) {
-      const [firstDeadline] = await db
-        .select({ deadline: nflPoolWeeks.pickDeadlineAt })
-        .from(nflPoolWeeks)
-        .where(and(eq(nflPoolWeeks.poolId, pool.id), isNotNull(nflPoolWeeks.pickDeadlineAt)))
-        .orderBy(asc(nflPoolWeeks.pickDeadlineAt))
-        .limit(1)
-      if (firstDeadline?.deadline && new Date() >= firstDeadline.deadline) {
-        return res.status(403).json({ error: 'This pool has already started and is closed to new entries.' })
-      }
-    }
+    // ── Late join and pool cap ───────────────────────────────────
+    // Checked only once we know a NEW entry is being created — an
+    // existing member landing back in their pool is not a late join.
+    const closed = await entriesClosed(pool)
+    if (closed) return res.status(closed.status).json({ error: closed.error })
 
-    // ── Caps ─────────────────────────────────────────────────────
+    // ── Per-person cap ───────────────────────────────────────────
     if (pool.maxEntriesPerUser != null && mine.length >= pool.maxEntriesPerUser) {
       return res.status(409).json({
         error:
@@ -145,16 +128,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             : `You already hold ${mine.length} entries, which is the limit here.`,
         entryId: mine[0]?.id,
       })
-    }
-
-    if (pool.maxEntries != null) {
-      const all = await db
-        .select({ id: nflPoolEntries.id })
-        .from(nflPoolEntries)
-        .where(eq(nflPoolEntries.poolId, pool.id))
-      if (all.length >= pool.maxEntries) {
-        return res.status(409).json({ error: 'This pool is full.' })
-      }
     }
 
     const handle = await ensureUser(userId)
