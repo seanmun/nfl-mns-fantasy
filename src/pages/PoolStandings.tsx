@@ -4,7 +4,7 @@ import { useAuth } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
 import { createApi, type StandingsRow } from '@/lib/api/client'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
-import { Card, Chip, EmptyState, ListRow, PageHeader, Skeleton } from '@/ui/components'
+import { Button, Card, Chip, EmptyState, ListRow, PageHeader, Skeleton } from '@/ui/components'
 
 function WinnersBlock({
   title,
@@ -73,7 +73,11 @@ export function PoolStandings() {
   const { getToken } = useAuth()
   const api = useMemo(() => createApi(getToken), [getToken])
 
-  const [sort, setSort] = useState<'points' | 'key' | 'lastWeek'>('points')
+  // Which VIEW of the same entries: 'points' (the pool's true order),
+  // 'key', 'week' (one week at a time), or 'seg-N' (one prize segment).
+  const [view, setView] = useState('points')
+  // The week the week view shows; null follows the latest graded week.
+  const [weekNo, setWeekNo] = useState<number | null>(null)
   const { data, isLoading, error } = useQuery({
     queryKey: ['standings', poolId],
     queryFn: () => api.getStandings(poolId),
@@ -99,20 +103,45 @@ export function PoolStandings() {
     )
   }
 
-  const graded = data.rows.some((r) => r.weekly.some((w) => w.points != null))
-  // "Last week" = the latest week ANY row has graded points for.
-  const gradedWeeks = data.rows.flatMap((r) =>
-    r.weekly.filter((w) => w.points != null).map((w) => w.week)
-  )
-  const lastWk = gradedWeeks.length ? Math.max(...gradedWeeks) : null
-  const lwPoints = (r: StandingsRow) =>
-    r.weekly.find((w) => w.week === lastWk)?.points ?? 0
+  // Weeks ANY row has graded points for, in order.
+  const gradedWeeks = [
+    ...new Set(
+      data.rows.flatMap((r) => r.weekly.filter((w) => w.points != null).map((w) => w.week))
+    ),
+  ].sort((a, b) => a - b)
+  const graded = gradedWeeks.length > 0
+  const lastWk = graded ? gradedWeeks[gradedWeeks.length - 1] : null
+  const cellOf = (r: StandingsRow, week: number | null) => r.weekly.find((w) => w.week === week)
+  const lwPoints = (r: StandingsRow) => cellOf(r, lastWk)?.points ?? 0
+
+  // The week view: the week asked for, else the latest graded one.
+  const shownWeek = weekNo != null && gradedWeeks.includes(weekNo) ? weekNo : lastWk
+  const weekIdx = shownWeek == null ? -1 : gradedWeeks.indexOf(shownWeek)
+  const weekPoints = (r: StandingsRow) => cellOf(r, shownWeek)?.points ?? 0
+
+  // Segments come from the pool's own prize settings — never hardcoded.
+  const segments = data.winners?.segments ?? []
+  const seg = view.startsWith('seg-') ? segments[Number(view.slice(4))] ?? null : null
+  const segCells = (r: StandingsRow) =>
+    seg ? r.weekly.filter((w) => w.week >= seg.startWeek && w.week <= seg.endWeek) : []
+  const segPoints = (r: StandingsRow) => segCells(r).reduce((n, w) => n + (w.points ?? 0), 0)
+
+  // Week and segment views rank on points alone, ties sharing a place —
+  // the same way the winners circle pays a segment.
   const rows =
-    sort === 'key'
+    view === 'key'
       ? rankBy(data.rows, (r) => r.keyPickScore, (r) => r.totalPoints)
-      : sort === 'lastWeek'
-        ? rankBy(data.rows, lwPoints, (r) => r.totalPoints)
-        : data.rows
+      : view === 'week'
+        ? rankBy(data.rows, weekPoints, () => 0)
+        : seg
+          ? rankBy(data.rows, segPoints, () => 0)
+          : data.rows
+  const views: Array<[string, string]> = [
+    ['points', 'Points'],
+    ['key', 'Key ★'],
+    ['week', 'By week'],
+    ...segments.map((s, i): [string, string] => [`seg-${i}`, `Wks ${s.startWeek}–${s.endWeek}`]),
+  ]
   const champions = data.final ? data.rows.filter((r) => r.rank === 1) : []
 
   return (
@@ -193,23 +222,17 @@ export function PoolStandings() {
       ) : null}
 
       {graded ? (
-        // Sort control — a VIEW of the same list, never a second page.
+        // View control — VIEWS of the same list, never a second page.
         // Points is the default and the pool's true ranking.
-        <div className="flex gap-2" role="group" aria-label="Sort standings by">
-          {(
-            [
-              ['points', 'Points'],
-              ['key', 'Key ★'],
-              ['lastWeek', 'Last week'],
-            ] as const
-          ).map(([key, label]) => (
+        <div className="grid grid-cols-3 gap-2" role="group" aria-label="Show standings by">
+          {views.map(([key, label]) => (
             <button
               key={key}
-              aria-pressed={sort === key}
-              onClick={() => setSort(key)}
+              aria-pressed={view === key}
+              onClick={() => setView(key)}
               className={
-                'flex-1 min-h-[var(--tap-target-min)] rounded-lg border-2 font-bold ' +
-                (sort === key
+                'min-h-[var(--tap-target-min)] px-1 rounded-lg border-2 font-bold ' +
+                (view === key
                   ? 'bg-[var(--color-foreground)] text-[var(--color-background)] border-[var(--color-foreground)]'
                   : 'border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]')
               }
@@ -218,6 +241,36 @@ export function PoolStandings() {
             </button>
           ))}
         </div>
+      ) : null}
+
+      {graded && view === 'week' && shownWeek != null ? (
+        // Arrows with words, not a swipe — a button is findable.
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            variant="quiet"
+            disabled={weekIdx <= 0}
+            onClick={() => setWeekNo(gradedWeeks[weekIdx - 1])}
+          >
+            &lsaquo; Prev
+          </Button>
+          <b className="text-[1.1rem] text-center">
+            {data.weeks.find((w) => w.week === shownWeek)?.label ?? `Week ${shownWeek}`}
+          </b>
+          <Button
+            variant="quiet"
+            disabled={weekIdx >= gradedWeeks.length - 1}
+            onClick={() => setWeekNo(gradedWeeks[weekIdx + 1])}
+          >
+            Next &rsaquo;
+          </Button>
+        </div>
+      ) : null}
+
+      {graded && seg ? (
+        <p className="text-[0.9rem] text-[var(--color-muted-foreground)]">
+          Points from weeks {seg.startWeek}–{seg.endWeek} only
+          {seg.complete ? ' — final.' : ', so far.'} Ties share a place.
+        </p>
       ) : null}
 
       {!graded ? (
@@ -261,26 +314,33 @@ export function PoolStandings() {
       {graded ? (
         <ul className="flex flex-col gap-2 tabular-nums">
           {rows.map((r) => {
-            const w = r.weekly.reduce((n, x) => n + x.correct, 0)
-            const l = r.weekly.reduce((n, x) => n + x.incorrect, 0)
-            const pp = r.weekly.reduce((n, x) => n + x.push, 0)
-            // Big number = whatever the list is sorted by; the other two
-            // metrics ride the sub-line so all three are always visible.
+            // W-L-P over whatever span the view covers.
+            const record = (cells: StandingsRow['weekly']) =>
+              `${cells.reduce((n, x) => n + x.correct, 0)}-${cells.reduce((n, x) => n + x.incorrect, 0)}-${cells.reduce((n, x) => n + x.push, 0)}`
+            const wk = cellOf(r, shownWeek)
+            // Big number = whatever the view ranks by; the sub-line
+            // carries the rest.
             const big =
-              sort === 'key' ? r.keyPickScore : sort === 'lastWeek' ? lwPoints(r) : r.totalPoints
+              view === 'key'
+                ? r.keyPickScore
+                : view === 'week'
+                  ? weekPoints(r)
+                  : seg
+                    ? segPoints(r)
+                    : r.totalPoints
             const rest =
-              sort === 'key' ? (
+              view === 'key' ? (
                 <>
                   {r.totalPoints} pts · wk {lwPoints(r)}
                 </>
-              ) : sort === 'lastWeek' ? (
-                <>
-                  {r.totalPoints} pts · <span className="text-[var(--color-key)]">★{r.keyPickScore}</span>
-                </>
+              ) : view === 'week' ? (
+                <>{wk && wk.points != null ? record([wk]) : 'no picks graded'}</>
+              ) : seg ? (
+                <>{record(segCells(r))}</>
               ) : (
                 <>
                   <span className="text-[var(--color-key)]">★{r.keyPickScore}</span> · wk{' '}
-                  {lwPoints(r)} · {w}-{l}-{pp}
+                  {lwPoints(r)} · {record(r.weekly)}
                 </>
               )
             return (
@@ -324,10 +384,12 @@ export function PoolStandings() {
         </ul>
       ) : null}
 
-      <p className="text-[0.85rem] text-[var(--color-muted-foreground)]">
-        Ties break on the key ★ column. A key pick scores no extra points during the
-        week — it only decides ties.
-      </p>
+      {view === 'points' || view === 'key' ? (
+        <p className="text-[0.85rem] text-[var(--color-muted-foreground)]">
+          Ties break on the key ★ column. A key pick scores no extra points during the
+          week — it only decides ties.
+        </p>
+      ) : null}
 
       <PoolTabBar />
     </div>

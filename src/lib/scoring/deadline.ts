@@ -54,6 +54,14 @@ export function isTbdKickoff(kickoffAt: Date): boolean {
   return easternParts(kickoffAt).minutesIntoDay === 0
 }
 
+// A game has kicked off, so a pick on it can no longer change. TBD
+// placeholders never have. The pick validator's lock and the pick reveal
+// both read this one test, so a pick is never shown to the pool while
+// its owner could still move it.
+export function hasKickedOff(kickoffAt: Date, now: Date): boolean {
+  return !isTbdKickoff(kickoffAt) && now >= kickoffAt
+}
+
 // The kickoff a week's deadline hangs off, or null when the rule finds
 // nothing to hang it on.
 //

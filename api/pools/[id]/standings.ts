@@ -403,7 +403,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         isEliminated: entry.isEliminated,
         weekly: weeksSorted.map((w) => {
           const ew = byWeekId.get(w.weekId)
-          return ew
+          // A row can exist before any grading — submitting picks creates
+          // it with zero points — so only a GRADED row has points. Null
+          // keeps an ungraded week from ranking everyone on a fake 0.
+          return ew?.gradedAt
             ? {
                 week: w.week,
                 points: ew.points,

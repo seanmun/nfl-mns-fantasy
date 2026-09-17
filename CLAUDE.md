@@ -185,21 +185,27 @@ still missing. Requiring a complete set here would throw away the
 half-finished work of exactly the members most likely to need the
 reminder.
 
-## Picks are hidden until the deadline
+## Picks are hidden until they can no longer change
 
-Before `pool_weeks.pickDeadlineAt`, a member sees **only their own**
-picks. After it, everyone's open up.
+A pick becomes public the moment its owner loses the power to change it:
+at **its own game's kickoff**, or at `pool_weeks.pickDeadlineAt`,
+whichever comes first. Until then only its owner sees it. A Thursday
+pick shows to the pool Thursday night; the same entry's Sunday picks
+stay hidden until the cutoff. (Changed 2026-09-17 on beta feedback —
+it used to be the week deadline for everything.)
+
+Kickoff here is `hasKickedOff()` — the exact test `validatePicks` uses
+to lock a pick — so nothing is ever shown that could still move. The
+key ★ on a kicked-off pick is equally frozen: the validator carries it
+through unchanged, so it is safe to reveal too.
 
 This is a read-path invariant and it is easy to break by accident — a
 leaderboard query that joins picks, a week view that returns the whole
 pool, an admin endpoint reused on a member page. Any endpoint returning
-picks must filter to the caller's own entries until the deadline has
-passed, and the check belongs in one shared helper rather than repeated
-per route.
-
-Note the deliberate consequence: an early game (Friday, Thanksgiving) can
-be played and graded while who picked it is still hidden. The result is
-public, the picks are not, until the week's cutoff.
+picks must go through `pickVisibility()` in `api/_pool.ts` rather than
+repeating the check per route. The hub assistant reads picks through
+this same endpoint, and its privacy wording in `mns-fantasy/api/chat.ts`
+must match this rule.
 
 ## Pre-deadline reminder
 

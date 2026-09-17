@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { anchorKickoff, computeDeadline, easternParts, isPickable, isTbdKickoff } from './deadline.js'
+import {
+  anchorKickoff,
+  computeDeadline,
+  easternParts,
+  hasKickedOff,
+  isPickable,
+  isTbdKickoff,
+} from './deadline.js'
 
 // 2026 US DST ends Sunday 1 November. Sunday 1pm ET is 17:00Z before that
 // and 18:00Z after, which is the entire reason this module exists.
@@ -129,5 +136,24 @@ describe('TBD kickoffs', () => {
     expect(anchorKickoff('sunday_1pm_et', [TBD, TBD])).toBeNull()
     // A real Sunday afternoon game is preferred over a placeholder.
     expect(anchorKickoff('sunday_1pm_et', [TBD, REAL])?.toISOString()).toBe(REAL.toISOString())
+  })
+})
+
+// hasKickedOff is when a pick stops being changeable AND when the pool
+// may see it — a Thursday pick reveals Thursday night, not Sunday.
+describe('hasKickedOff', () => {
+  const THU = new Date('2026-09-11T00:15:00Z') // Thu 8:15 PM ET
+
+  it('flips at kickoff, not before', () => {
+    expect(hasKickedOff(THU, new Date('2026-09-11T00:14:59Z'))).toBe(false)
+    expect(hasKickedOff(THU, THU)).toBe(true)
+    expect(hasKickedOff(THU, new Date('2026-09-13T12:00:00Z'))).toBe(true)
+  })
+
+  it('never fires for a TBD placeholder', () => {
+    // Midnight ET would otherwise reveal every unscheduled game's picks
+    // at 00:00:01 while they can still change.
+    const TBD = new Date('2027-01-03T05:00:00Z')
+    expect(hasKickedOff(TBD, new Date('2027-01-03T16:00:00Z'))).toBe(false)
   })
 })

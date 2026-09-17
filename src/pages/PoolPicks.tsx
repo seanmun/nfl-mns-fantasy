@@ -183,15 +183,12 @@ export function PoolPicks() {
     commit(next)
   }
 
-  // How many entries took each side — only meaningful (and only shown)
-  // once the reveal is open.
-  const countsByGame = new Map<string, Map<string, number>>()
-  if (data.revealed) {
-    for (const p of data.others) {
-      const g = countsByGame.get(p.gameId) ?? new Map<string, number>()
-      g.set(p.selectedTeamId, (g.get(p.selectedTeamId) ?? 0) + 1)
-      countsByGame.set(p.gameId, g)
-    }
+  // Everyone's picks per game. The server only sends games whose picks
+  // are public (kicked off, or past the deadline), so a Thursday game
+  // fills in Thursday night while Sunday's stay empty.
+  const othersByGame = new Map<string, ApiOtherPick[]>()
+  for (const p of data.others) {
+    othersByGame.set(p.gameId, [...(othersByGame.get(p.gameId) ?? []), p])
   }
 
   let lastDay = ''
@@ -293,7 +290,7 @@ export function PoolPicks() {
               wantsKey={wantsKey}
               keyLocked={keyLocked}
               atLimit={need != null && have >= need && !picks.has(game.gameId)}
-              counts={countsByGame.get(game.gameId) ?? null}
+              pickers={game.picksRevealed ? othersByGame.get(game.gameId) ?? [] : null}
               saved={
                 data.myPicks.find(
                   (p) => p.entryId === activeEntry && p.gameId === game.gameId
@@ -386,7 +383,7 @@ function GameCard({
   wantsKey,
   keyLocked,
   atLimit,
-  counts,
+  pickers,
   saved,
   onPick,
   onKey,
@@ -398,8 +395,9 @@ function GameCard({
   // The key already sits on a game that has kicked off — it can't move.
   keyLocked: boolean
   atLimit: boolean
-  // Entries on each side, post-reveal only; null before the deadline.
-  counts: Map<string, number> | null
+  // Every entry's pick on this game once its picks are public (kickoff
+  // or deadline); null while they are still hidden.
+  pickers: ApiOtherPick[] | null
   // The caller's SAVED pick on this game: the line it grades on (which
   // can differ from the current number after an admin fix) and its
   // result. Null when there is none.
@@ -413,6 +411,14 @@ function GameCard({
   const myLine = saved?.lineSpreadAtPick ?? null
   const scored = game.status === 'in_progress' || game.status === 'final'
   const standing = saved ? pickStanding(saved, game, spreadMode) : null
+  const countFor = (teamId: string) =>
+    pickers ? pickers.filter((p) => p.selectedTeamId === teamId).length : null
+  // FAVORITE on the left, underdog on the right, home carried by the
+  // connector: "Giants at Eagles +3" = Eagles home AND dog. Straight-up
+  // pools (and pick 'em lines) stay away-at-home.
+  const homeFav = spreadMode === 'ats' && game.spread != null && game.spread < 0
+  const left = homeFav ? game.home : game.away
+  const right = homeFav ? game.away : game.home
   // Locked cards stay at full strength — scores are the point of them.
   // Lock is carried by the 🔒 Locked label and the tiles losing their
   // tappable border, never by fading the whole card.
@@ -445,12 +451,6 @@ function GameCard({
       </div>
 
       {(() => {
-        // FAVORITE on the left, underdog on the right, home carried by
-        // the connector: "Giants at Eagles +3" = Eagles home AND dog.
-        // Straight-up pools (and pick 'em lines) stay away-at-home.
-        const homeFav = spreadMode === 'ats' && game.spread != null && game.spread < 0
-        const left = homeFav ? game.home : game.away
-        const right = homeFav ? game.away : game.home
         const leftSide: 'home' | 'away' = homeFav ? 'home' : 'away'
         const rightSide: 'home' | 'away' = homeFav ? 'away' : 'home'
         // Right side is home → the left team travels: "at". Otherwise
@@ -477,7 +477,7 @@ function GameCard({
                 game.status === 'final' && mine != null && theirs != null && mine < theirs
               }
               standing={isPicked ? standing : null}
-              pickCount={counts && team ? counts.get(team.id) ?? 0 : null}
+              pickCount={team ? countFor(team.id) : null}
               onClick={() => team && onPick(team.id)}
             />
           )
@@ -533,7 +533,67 @@ function GameCard({
           </button>
         </div>
       ) : null}
+
+      {pickers && pickers.length ? <WhoPicked pickers={pickers} teams={[left, right]} /> : null}
     </article>
+  )
+}
+
+// Who took each side, once this game's picks are public — a Thursday
+// game from its own kickoff, everything from the deadline. Folded behind
+// a tap so a long list never pushes the slate down the page.
+function WhoPicked({
+  pickers,
+  teams,
+}: {
+  pickers: ApiOtherPick[]
+  teams: Array<ApiSlateGame['home']>
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border-t border-[var(--color-border)]">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full min-h-[var(--tap-target-min)] px-3 flex items-center justify-between font-bold text-[0.9rem] text-[var(--color-muted-foreground)]"
+      >
+        Who picked
+        <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+      </button>
+      {open ? (
+        <div className="px-3 pb-3 flex flex-col gap-2">
+          {teams.map((team) => {
+            if (!team) return null
+            const names = pickers
+              .filter((p) => p.selectedTeamId === team.id)
+              .sort((a, b) => a.entryName.localeCompare(b.entryName))
+            return (
+              <p key={team.id} className="text-[0.9rem] leading-relaxed">
+                <b>{team.nickname}:</b>{' '}
+                {names.length ? (
+                  names.map((p, i) => (
+                    <span key={p.entryId}>
+                      {i > 0 ? ' · ' : ''}
+                      {p.entryName}
+                      {p.isKeyPick ? (
+                        <span className="text-[var(--color-key)]">
+                          {' '}★<span className="sr-only"> key pick</span>
+                        </span>
+                      ) : null}
+                      {p.isAuto ? (
+                        <span className="text-[var(--color-muted-foreground)]"> (auto)</span>
+                      ) : null}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[var(--color-muted-foreground)]">nobody</span>
+                )}
+              </p>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

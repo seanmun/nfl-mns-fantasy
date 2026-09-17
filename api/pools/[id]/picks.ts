@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../_db.js'
-import { applyCors, entriesClosed, loadCtx, othersPicksVisible } from '../../_pool.js'
+import { applyCors, entriesClosed, loadCtx, pickVisibility } from '../../_pool.js'
 import {
   nflEntryWeeks,
   nflGames,
@@ -122,6 +122,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const now = new Date()
   const published = poolWeek?.linesPublishedAt ?? null
   const deadline = poolWeek?.pickDeadlineAt ?? null
+  // Whose picks the pool may see, per game — single source of truth for
+  // that rule, see pickVisibility.
+  const visibility = await pickVisibility(pool.id, week.id, now)
 
   // A published ATS game with no number is OFF THE BOARD — the admin
   // couldn't or wouldn't hang a line on it. Shown, never pickable, and
@@ -149,6 +152,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         pickDeadlineAt: deadline,
         kickoffAt: g.kickoffAt,
       }),
+    // Everyone's picks on this game are public — it kicked off, or the
+    // week's deadline passed.
+    picksRevealed: visibility.gameRevealed(g.kickoffAt),
   }))
 
   // ── Picks ───────────────────────────────────────────────────────
@@ -166,11 +172,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .where(and(inArray(nflEntryWeeks.entryId, myEntryIds), eq(nflEntryWeeks.weekId, week.id)))
   const submittedByEntry = new Map(myEntryWeeks.map((r) => [r.entryId, r.submittedAt]))
 
-  // Everyone else's picks are withheld until the deadline. Single
-  // source of truth for that rule — see othersPicksVisible.
-  const revealed = await othersPicksVisible(pool.id, week.id)
+  // Everyone else's picks: the whole week once the deadline passes,
+  // before that only the games that have kicked off. `revealed` stays
+  // the WEEK-level answer — the page's locked-week view keys off it.
+  const revealed = visibility.weekRevealed
+  const revealedGameIds = slate.filter((g) => g.picksRevealed).map((g) => g.gameId)
   let others: unknown[] = []
-  if (revealed) {
+  if (revealed || revealedGameIds.length) {
     const allEntries = (
       await db.select().from(nflPoolEntries).where(eq(nflPoolEntries.poolId, pool.id))
     ).filter((e) => e.status === 'active')
@@ -183,7 +191,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             nflPicks.entryId,
             allEntries.map((e) => e.id)
           ),
-          eq(nflPicks.weekId, week.id)
+          eq(nflPicks.weekId, week.id),
+          revealed ? undefined : inArray(nflPicks.gameId, revealedGameIds)
         )
       )
     const nameById = new Map(allEntries.map((e) => [e.id, e.entryName]))

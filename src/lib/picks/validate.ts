@@ -1,5 +1,5 @@
 import type { PoolType } from '../db/schema.js'
-import { isPickable, isTbdKickoff } from '../scoring/deadline.js'
+import { hasKickedOff, isPickable } from '../scoring/deadline.js'
 
 // Validation for a member submitting their picks for one week.
 //
@@ -68,8 +68,9 @@ export function validatePicks(input: ValidateInput): ValidateResult {
 
   // A TBD kickoff (midnight ET) never locks its own game — see
   // isTbdKickoff. Treating it as locked would make every unscheduled
-  // late-season game unpickable for the whole day.
-  const locked = (g: SlateGame) => !isTbdKickoff(g.kickoffAt) && input.now >= g.kickoffAt
+  // late-season game unpickable for the whole day. The same test decides
+  // when a pick is revealed to the pool (pickVisibility).
+  const locked = (g: SlateGame) => hasKickedOff(g.kickoffAt, input.now)
 
   // ── Week-level gates ────────────────────────────────────────────
   if (!input.linesPublishedAt) {

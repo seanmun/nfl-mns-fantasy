@@ -3,6 +3,7 @@ import { and, asc, eq, isNotNull } from 'drizzle-orm'
 import { db } from './_db.js'
 import { isAdmin, verifyAuth } from './_middleware.js'
 import { nflPoolEntries, nflPoolWeeks, nflPools, type NflPool } from '../src/lib/db/schema.js'
+import { hasKickedOff } from '../src/lib/scoring/deadline.js'
 
 // Shared pool plumbing: who is asking, what they are allowed to do, and
 // the one rule that decides whether they may see anyone else's picks.
@@ -63,17 +64,28 @@ export function requirePoolAdmin(ctx: Ctx, res: VercelResponse): boolean {
 // endpoint reused on a member page. Repeating the check per route is how
 // one of them ends up missing it and leaks the whole pool's picks.
 //
-// Deliberate consequence: an early game can be played and graded while
-// who picked it is still hidden. The result is public, the picks are not,
-// until the week's cutoff.
-export async function othersPicksVisible(poolId: string, weekId: string): Promise<boolean> {
+// A pick becomes public the moment its owner can no longer change it:
+// when its own game kicks off, or at the week's deadline, whichever
+// comes first. A Thursday pick shows Thursday night while the same
+// entry's Sunday picks stay hidden until the cutoff. Kickoff is
+// hasKickedOff — the exact test that locks the pick in validatePicks —
+// so nothing is shown that could still move. The key ★ on a kicked-off
+// pick is equally fixed: validatePicks carries it through unchanged.
+export async function pickVisibility(
+  poolId: string,
+  weekId: string,
+  now: Date = new Date()
+): Promise<{ weekRevealed: boolean; gameRevealed: (kickoffAt: Date) => boolean }> {
   const [pw] = await db
     .select({ deadline: nflPoolWeeks.pickDeadlineAt })
     .from(nflPoolWeeks)
     .where(and(eq(nflPoolWeeks.poolId, poolId), eq(nflPoolWeeks.weekId, weekId)))
     .limit(1)
-  if (!pw?.deadline) return false
-  return new Date() >= pw.deadline
+  const weekRevealed = !!pw?.deadline && now >= pw.deadline
+  return {
+    weekRevealed,
+    gameRevealed: (kickoffAt) => weekRevealed || hasKickedOff(kickoffAt, now),
+  }
 }
 
 // Whether the pool still takes NEW entries — null when it does. Join

@@ -30,6 +30,9 @@ export interface ApiSlateGame {
   // Computed server-side through isPickable, so the client never has to
   // reimplement the two-cutoff rule and get it subtly different.
   open: boolean
+  // Everyone's picks on this game are public: it kicked off, or the
+  // week's deadline passed. Server-computed via pickVisibility.
+  picksRevealed: boolean
 }
 
 export interface ApiPick {
@@ -48,8 +51,9 @@ export interface ApiPick {
   pointsEarned: number
 }
 
-// One row of the post-deadline reveal: every entry's picks, the caller's
-// included. Absent (empty array) until the week's deadline passes.
+// One revealed pick: every entry's picks, the caller's included, on
+// games whose picks are public — each game from its own kickoff, the
+// whole week from the deadline. Empty before anything kicks off.
 export interface ApiOtherPick {
   entryId: string
   entryName: string
