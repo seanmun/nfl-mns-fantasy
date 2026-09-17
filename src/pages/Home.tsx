@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Check, Star, Trophy } from 'lucide-react'
 
 // The signed-out front door. Signed-in users never see this — HomeRoute
 // swaps in MyPools — so this page has exactly one audience: someone a
@@ -89,8 +90,8 @@ function MockGame({
         {spread}
       </span>
       {isPicked ? (
-        <span className="absolute top-1 right-1.5 w-4 h-4 rounded-full bg-[var(--color-accent)] text-[var(--color-background)] text-[0.65rem] font-black text-center leading-4">
-          &#10003;
+        <span className="absolute top-1 right-1.5 w-4 h-4 inline-flex items-center justify-center rounded-full bg-[var(--color-accent)] text-[var(--color-background)]">
+          <Check size={11} strokeWidth={3.5} aria-hidden="true" />
         </span>
       ) : null}
     </span>
@@ -103,8 +104,8 @@ function MockGame({
         {side(home, homeSpread, picked === 'home')}
       </div>
       {keyPick ? (
-        <span className="text-[0.78rem] font-bold text-[var(--color-key)]">
-          ★ MY KEY PICK
+        <span className="inline-flex items-center gap-1 text-[0.78rem] font-bold text-[var(--color-key)]">
+          <Star size={13} fill="currentColor" aria-hidden="true" /> MY KEY PICK
         </span>
       ) : null}
     </div>
@@ -131,7 +132,14 @@ function MockLive({
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--color-muted)] px-3 py-2 tabular-nums text-[0.9rem]">
       <b>
-        {keyPick ? <span className="text-[var(--color-key)]">★ </span> : null}
+        {keyPick ? (
+          <Star
+            size={13}
+            fill="currentColor"
+            aria-hidden="true"
+            className="inline-block align-[-0.1em] mr-1 text-[var(--color-key)]"
+          />
+        ) : null}
         {team}
       </b>
       <span className="text-[var(--color-muted-foreground)]">
@@ -176,7 +184,18 @@ function MockRow({
       </span>
       <span className="shrink-0 text-[var(--color-muted-foreground)]">
         {pts} pts
-        {keyScore ? <span className="text-[var(--color-key)]"> · ★{keyScore}</span> : null}
+        {keyScore ? (
+          <span className="text-[var(--color-key)]">
+            {' '}·{' '}
+            <Star
+              size={12}
+              fill="currentColor"
+              aria-hidden="true"
+              className="inline-block align-[-0.1em]"
+            />
+            {keyScore}
+          </span>
+        ) : null}
       </span>
     </div>
   )
@@ -245,14 +264,14 @@ export function Home() {
         <div className="grid sm:grid-cols-2 gap-4">
           <MockPanel
             caption="Pick your five, star your key"
-            note="Tap a team, tap ★ on your surest one. Auto-saves as you go."
+            note="Tap a team, star your surest one. Auto-saves as you go."
           >
             <MockGame away="Eagles" awaySpread="+3.5" home="Chiefs" homeSpread="-3.5" picked="home" />
             <MockGame away="Cowboys" awaySpread="-1.5" home="Giants" homeSpread="+1.5" picked="away" keyPick />
             <div className="mt-1 rounded-lg bg-[var(--color-muted)] px-3 py-2 flex items-baseline justify-between">
               <b className="tabular-nums text-[0.95rem]">5 of 5 picks</b>
-              <span className="text-[0.8rem] text-[var(--color-accent)] font-bold">
-                &#10003; Submitted
+              <span className="inline-flex items-center gap-1 text-[0.8rem] text-[var(--color-accent)] font-bold">
+                <Check size={14} aria-hidden="true" /> Submitted
               </span>
             </div>
           </MockPanel>
@@ -268,7 +287,7 @@ export function Home() {
 
           <MockPanel
             caption="Standings that keep themselves"
-            note="Points rank it, your key ★ total breaks ties."
+            note="Points rank it, your key-pick total breaks ties."
           >
             <MockRow rank="1" name="Gridiron Gary" pts="41" keyScore="5" />
             <MockRow rank="2" name="Upset Central" pts="39" keyScore="6" you />
@@ -281,11 +300,15 @@ export function Home() {
             note="Season places, key-pick places, segment races, even last place."
           >
             <div className="rounded-lg border border-[var(--color-key)] px-3 py-2 text-center">
-              <span aria-hidden="true">&#127942;</span>{' '}
+              <Trophy
+                size={16}
+                aria-hidden="true"
+                className="inline-block align-[-0.15em] text-[var(--color-key)]"
+              />{' '}
               <b>Champion — Gridiron Gary</b>
             </div>
             <MockRow rank="1" name="Weeks 1–5 · Hot Start" pts="14" keyScore="" />
-            <MockRow rank="1" name="Key picks ★ · Upset Central" pts="6" keyScore="" />
+            <MockRow rank="1" name="Key picks · Upset Central" pts="6" keyScore="" />
             <MockRow rank="12" name="Last place · Uncle Rich" pts="19" keyScore="" />
           </MockPanel>
         </div>
@@ -317,15 +340,15 @@ export function Home() {
         <h2 className="text-[1.4rem] font-extrabold mb-5">Built to keep a pool honest</h2>
         <ul className="flex flex-col gap-3 max-w-prose">
           {[
-            'Everyone’s picks stay hidden until the deadline, then reveal all at once.',
+            'Picks stay hidden until they can’t change — each game’s at its kickoff, the rest at the deadline.',
             'Miss the deadline and the app picks for you — marked as auto, never passed off as yours.',
             'A key pick breaks season ties, so first place is never a coin flip.',
             'The rules page is generated from your pool’s actual settings, so it can’t drift from how the pool really scores.',
             'No money touches the app. You settle up the way you already do.',
           ].map((line) => (
             <li key={line} className="flex gap-3">
-              <span aria-hidden="true" className="text-[var(--color-accent)] font-black">
-                &#10003;
+              <span className="shrink-0 text-[var(--color-accent)]">
+                <Check size={20} aria-hidden="true" />
               </span>
               <p className="text-[var(--color-muted-foreground)] leading-relaxed">{line}</p>
             </li>

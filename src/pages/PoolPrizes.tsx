@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createApi, type PrizeItem } from '@/lib/api/client'
 import { dateLabel, usd } from '@/lib/utils'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
+import { Trophy } from 'lucide-react'
 import { Banner, Button, Card, EmptyState, PageHeader, Skeleton } from '@/ui/components'
 
 // The prize pool: what the pot is worth, what each prize pays, and who
@@ -109,8 +110,7 @@ export function PoolPrizes() {
 function PrizeCard({ item, mine }: { item: PrizeItem; mine: Set<string> }) {
   const shown = item.leaders.slice(0, 3)
   const more = item.leaders.length - shown.length
-  const lead =
-    item.status === 'final' ? '\u{1F3C6} Won by' : item.key === 'last' ? 'Currently' : 'Leading'
+  const lead = item.status === 'final' ? 'Won by' : item.key === 'last' ? 'Currently' : 'Leading'
 
   return (
     <Card className="flex flex-col gap-1.5">
@@ -128,7 +128,15 @@ function PrizeCard({ item, mine }: { item: PrizeItem; mine: Set<string> }) {
       </p>
       {item.leaders.length ? (
         <p className="text-[0.95rem] tabular-nums">
-          <b className={item.status === 'final' ? 'text-[var(--color-key)]' : ''}>{lead}:</b>{' '}
+          <b
+            className={
+              'inline-flex items-center gap-1 align-[-0.1em] ' +
+              (item.status === 'final' ? 'text-[var(--color-key)]' : '')
+            }
+          >
+            {item.status === 'final' ? <Trophy size={16} aria-hidden="true" /> : null}
+            {lead}:
+          </b>{' '}
           {shown.map((l, i) => (
             <span key={l.entryId}>
               {i > 0 ? ' · ' : ''}

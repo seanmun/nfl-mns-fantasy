@@ -82,7 +82,8 @@ textarea.mns-input { padding: 0.75rem 1rem; line-height: 1.5; min-height: 6rem; 
 .mns-tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; background: var(--color-card); border-top: 2px solid var(--color-border-interactive); padding-bottom: env(safe-area-inset-bottom); }
 .mns-tab { flex: 1; min-height: 3.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted-foreground); text-decoration: none; border-top: 2px solid transparent; margin-top: -2px; }
 .mns-tab--active { color: var(--color-accent); border-top-color: var(--color-accent); }
-.mns-tab__icon { font-size: 1.1rem; line-height: 1; }
+.mns-tab__icon { display: inline-flex; align-items: center; justify-content: center; height: 1.4rem; line-height: 1; }
+.mns-tab__icon svg { width: 1.25rem; height: 1.25rem; }
 
 /* ── Stepper (half-point) ── */
 .mns-stepper { display: inline-flex; align-items: center; gap: 0.25rem; }

@@ -4,6 +4,7 @@ import { useAuth, useUser } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createApi } from '@/lib/api/client'
+import { ChevronRight } from 'lucide-react'
 import { Button, Card, EmptyState, Skeleton } from '@/ui/components'
 
 export function MyPools() {
@@ -137,7 +138,9 @@ export function MyPools() {
                       {' '}· {pool.season} · final standings
                     </span>
                   </span>
-                  <span className="shrink-0 text-[var(--color-accent)] font-bold">&rsaquo;</span>
+                  <span className="shrink-0 text-[var(--color-accent)]">
+                    <ChevronRight size={20} aria-hidden="true" />
+                  </span>
                 </Link>
               </li>
             ))}

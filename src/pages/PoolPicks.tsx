@@ -9,6 +9,15 @@ import {
   type ApiSlateGame,
   type SavePick,
 } from '@/lib/api/client'
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Lock,
+  Star,
+} from 'lucide-react'
 import { useAutoSave } from '@/hooks/useAutoSave'
 import { kickoffLabel, dayLabel, pickStanding, teamSpread, TONE_COLOR } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
@@ -114,9 +123,9 @@ export function PoolPicks() {
           onClick={() => switchWeek(data.week.week - 1)}
           disabled={data.week.week <= data.pool.startWeek}
           aria-label="Previous week"
-          className="min-h-[var(--tap-target-min)] min-w-[var(--tap-target-min)] rounded-lg font-black text-[var(--color-accent)] disabled:opacity-30"
+          className="min-h-[var(--tap-target-min)] min-w-[var(--tap-target-min)] inline-flex items-center justify-center rounded-lg text-[var(--color-accent)] disabled:opacity-30"
         >
-          &lsaquo;
+          <ChevronLeft aria-hidden="true" />
         </button>
         <p className="text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-accent)]">
           {data.week.label}
@@ -125,9 +134,9 @@ export function PoolPicks() {
           onClick={() => switchWeek(data.week.week + 1)}
           disabled={data.week.week >= data.pool.endWeek}
           aria-label="Next week"
-          className="min-h-[var(--tap-target-min)] min-w-[var(--tap-target-min)] rounded-lg font-black text-[var(--color-accent)] disabled:opacity-30"
+          className="min-h-[var(--tap-target-min)] min-w-[var(--tap-target-min)] inline-flex items-center justify-center rounded-lg text-[var(--color-accent)] disabled:opacity-30"
         >
-          &rsaquo;
+          <ChevronRight aria-hidden="true" />
         </button>
       </div>
       <h1 className="text-[1.7rem] font-extrabold leading-tight text-balance">{data.pool.name}</h1>
@@ -201,7 +210,19 @@ export function PoolPicks() {
         // The one instruction, stated instead of implied.
         <p className="mx-4 mt-4 rounded-lg border-l-4 border-[var(--color-accent)] bg-[var(--color-card)] px-3 py-2 font-semibold">
           Pick {data.pool.poolType === 'survivor' ? 'one team' : need === data.slate.length ? 'every game' : `${need} games`}
-          {wantsKey ? ', star ★ your surest one' : ''}, then tap{' '}
+          {wantsKey ? (
+            <>
+              , star{' '}
+              <Star
+                size={16}
+                fill="currentColor"
+                aria-hidden="true"
+                className="inline-block align-[-0.12em] text-[var(--color-key)]"
+              />{' '}
+              your surest one
+            </>
+          ) : null}
+          , then tap{' '}
           <b className="text-[var(--color-accent)]">Submit</b>.
         </p>
       ) : null}
@@ -444,8 +465,8 @@ function GameCard({
           </span>
         ) : !game.open ? (
           // Never colour alone — a padlock and the word, per WCAG 1.4.1.
-          <span className="font-bold uppercase tracking-wider text-[0.72rem] text-[var(--color-locked)]">
-            &#128274; Locked
+          <span className="inline-flex items-center gap-1 font-bold uppercase tracking-wider text-[0.72rem] text-[var(--color-locked)]">
+            <Lock size={14} aria-hidden="true" /> Locked
           </span>
         ) : null}
       </div>
@@ -513,8 +534,8 @@ function GameCard({
         // button that would fail (moving it off) or silently not save
         // (moving it on).
         picked.isKey ? (
-          <p className="border-t border-[var(--color-border)] px-3 py-2.5 font-bold tracking-wide text-[var(--color-key)]">
-            ★ Key pick &middot; locked in
+          <p className="flex items-center gap-1.5 border-t border-[var(--color-border)] px-3 py-2.5 font-bold tracking-wide text-[var(--color-key)]">
+            <Star size={18} fill="currentColor" aria-hidden="true" /> Key pick &middot; locked in
           </p>
         ) : null
       ) : wantsKey && picked && !keyLocked ? (
@@ -523,13 +544,18 @@ function GameCard({
             onClick={onKey}
             aria-pressed={picked.isKey}
             className={
-              'w-full min-h-[var(--tap-target-min)] rounded-lg font-bold tracking-wide ' +
+              'w-full min-h-[var(--tap-target-min)] inline-flex items-center justify-center gap-2 rounded-lg font-bold tracking-wide ' +
               (picked.isKey
                 ? 'bg-[var(--color-key)] text-[var(--color-background)] border-2 border-[var(--color-key)]'
                 : 'border-2 border-dashed border-[var(--color-border-interactive)] text-[var(--color-muted-foreground)]')
             }
           >
-            {picked.isKey ? '★ THIS IS MY KEY PICK' : '☆ Make this my key pick'}
+            <Star
+              size={18}
+              fill={picked.isKey ? 'currentColor' : 'none'}
+              aria-hidden="true"
+            />
+            {picked.isKey ? 'THIS IS MY KEY PICK' : 'Make this my key pick'}
           </button>
         </div>
       ) : null}
@@ -558,7 +584,7 @@ function WhoPicked({
         className="w-full min-h-[var(--tap-target-min)] px-3 flex items-center justify-between font-bold text-[0.9rem] text-[var(--color-muted-foreground)]"
       >
         Who picked
-        <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+        {open ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
       </button>
       {open ? (
         <div className="px-3 pb-3 flex flex-col gap-2">
@@ -577,7 +603,14 @@ function WhoPicked({
                       {p.entryName}
                       {p.isKeyPick ? (
                         <span className="text-[var(--color-key)]">
-                          {' '}★<span className="sr-only"> key pick</span>
+                          {' '}
+                          <Star
+                            size={14}
+                            fill="currentColor"
+                            aria-hidden="true"
+                            className="inline-block align-[-0.1em]"
+                          />
+                          <span className="sr-only"> key pick</span>
                         </span>
                       ) : null}
                       {p.isAuto ? (
@@ -676,10 +709,10 @@ function TeamButton({
           the ✓ corner badge would sit on top of the score. */}
       {selected && score != null ? (
         <span
-          className="text-[0.78rem] font-extrabold tracking-wider"
+          className="inline-flex items-center gap-1 text-[0.78rem] font-extrabold tracking-wider"
           style={{ color: standing ? TONE_COLOR[standing.tone] : 'var(--color-foreground)' }}
         >
-          &#10003; {standing?.word ?? 'YOUR PICK'}
+          <Check size={14} aria-hidden="true" /> {standing?.word ?? 'YOUR PICK'}
         </span>
       ) : null}
       {pickCount != null ? (
@@ -688,8 +721,8 @@ function TeamButton({
         </span>
       ) : null}
       {selected && score == null ? (
-        <span className="absolute top-1.5 right-2 w-6 h-6 rounded-full bg-[var(--color-accent)] text-[var(--color-background)] font-black text-center leading-6">
-          &#10003;
+        <span className="absolute top-1.5 right-2 w-6 h-6 inline-flex items-center justify-center rounded-full bg-[var(--color-accent)] text-[var(--color-background)]">
+          <Check size={16} strokeWidth={3} aria-hidden="true" />
         </span>
       ) : null}
     </button>
@@ -758,7 +791,11 @@ function StatusBar({
       <div className="flex-1">
         <b className={'block text-[1.15rem] tabular-nums ' + (done ? 'text-[var(--color-accent)]' : '')}>
           {have} of {need} picks
-          {submitted ? <span className="ml-2 text-[var(--color-accent)]">&#10003; Submitted</span> : null}
+          {submitted ? (
+            <span className="ml-2 inline-flex items-center gap-1 align-[-0.1em] text-[var(--color-accent)]">
+              <Check size={16} aria-hidden="true" /> Submitted
+            </span>
+          ) : null}
         </b>
         <span className="text-[0.85rem] text-[var(--color-muted-foreground)]">
           {submitError ?? detail}
@@ -888,7 +925,12 @@ function Reveal({
                     className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border-interactive)] px-2.5 py-1.5 font-bold text-[0.95rem]"
                   >
                     {p.isKeyPick ? (
-                      <span aria-label="key pick" className="text-[var(--color-key)]">★</span>
+                      <Star
+                        size={14}
+                        fill="currentColor"
+                        aria-hidden="true"
+                        className="text-[var(--color-key)]"
+                      />
                     ) : null}
                     {nickById.get(p.selectedTeamId) ?? p.selectedTeamId}
                     {b ? (

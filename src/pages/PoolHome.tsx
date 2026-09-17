@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Lock, Star, Unlock } from 'lucide-react'
 import {
   createApi,
   type ApiPick,
@@ -138,7 +139,9 @@ export function PoolHome() {
 
       {justSubmitted ? (
         <Banner tone="ok">
-          <b className="text-[var(--color-accent)]">&#10003; Picks submitted</b> — you&rsquo;re
+          <b className="inline-flex items-center gap-1 text-[var(--color-accent)]">
+            <Check size={18} aria-hidden="true" /> Picks submitted
+          </b> — you&rsquo;re
           locked in for {data.week.label}. Change your mind any time before the deadline,
           just resubmit after.
         </Banner>
@@ -191,13 +194,18 @@ export function PoolHome() {
                 {recap.rankChange != null && recap.rankChange !== 0 ? (
                   <b
                     className={
-                      recap.rankChange > 0
-                        ? ' text-[var(--color-pick-win)]'
-                        : ' text-[var(--color-pick-loss)]'
+                      'inline-flex items-center align-[-0.15em] ' +
+                      (recap.rankChange > 0
+                        ? 'text-[var(--color-pick-win)]'
+                        : 'text-[var(--color-pick-loss)]')
                     }
                   >
-                    {' '}
-                    {recap.rankChange > 0 ? `▲${recap.rankChange}` : `▼${-recap.rankChange}`}
+                    {recap.rankChange > 0 ? (
+                      <ArrowUp size={14} aria-hidden="true" />
+                    ) : (
+                      <ArrowDown size={14} aria-hidden="true" />
+                    )}
+                    {Math.abs(recap.rankChange)}
                   </b>
                 ) : null}
               </>
@@ -350,8 +358,14 @@ function AdminCard({ poolId, deadlinePassed }: { poolId: string; deadlinePassed:
             aria-expanded={showShort}
             className="min-h-[var(--tap-target-min)] text-left font-bold text-[var(--color-muted-foreground)]"
           >
-            {pulse.short.length} of {pulse.entriesTotal} entries still short on picks{' '}
-            {showShort ? '▴' : '▾'}
+            <span className="inline-flex items-center gap-1.5">
+              {pulse.short.length} of {pulse.entriesTotal} entries still short on picks
+              {showShort ? (
+                <ChevronUp size={18} aria-hidden="true" />
+              ) : (
+                <ChevronDown size={18} aria-hidden="true" />
+              )}
+            </span>
           </button>
           {showShort ? (
             <ul className="max-h-56 overflow-y-auto flex flex-col gap-1 text-[0.9rem]">
@@ -527,10 +541,13 @@ function EntryHero({
         <>
           {entry.submittedAt && complete ? (
             <p className="text-[1.15rem]">
-              <b className="text-[var(--color-accent)]">
-                &#10003; Locked in — {mine.length} of {need}
+              <b className="inline-flex items-center gap-1.5 text-[var(--color-accent)]">
+                <Check size={20} aria-hidden="true" />
+                Locked in — {mine.length} of {need}
                 {data.pool.keyPick && hasKey ? (
-                  <span className="text-[var(--color-key)]"> + key ★</span>
+                  <span className="inline-flex items-center gap-1 text-[var(--color-key)]">
+                    + key <Star size={16} fill="currentColor" aria-hidden="true" />
+                  </span>
                 ) : null}
               </b>
             </p>
@@ -626,13 +643,24 @@ function PickChip({
 
   return (
     <div className="flex items-center gap-3 rounded-lg bg-[var(--color-muted)] px-3 py-2 tabular-nums">
-      <span aria-hidden="true" className="shrink-0 text-[1.1rem] leading-none">
-        {game.open ? '\u{1F513}' : '\u{1F512}'}
+      <span className="shrink-0 text-[var(--color-muted-foreground)]">
+        {game.open ? (
+          <Unlock size={18} aria-hidden="true" />
+        ) : (
+          <Lock size={18} aria-hidden="true" />
+        )}
       </span>
       <span className="flex-1 min-w-0">
         <span className="flex items-baseline justify-between gap-2">
           <b className="min-w-0 truncate">
-            {pick.isKeyPick ? <span className="text-[var(--color-key)]">★ </span> : null}
+            {pick.isKeyPick ? (
+              <Star
+                size={15}
+                fill="currentColor"
+                aria-hidden="true"
+                className="inline-block align-[-0.12em] mr-1 text-[var(--color-key)]"
+              />
+            ) : null}
             {myTeam?.nickname ?? pick.selectedTeamId}
             {line ? (
               <span className="ml-1.5 font-mono text-[0.9rem] text-[var(--color-muted-foreground)]">

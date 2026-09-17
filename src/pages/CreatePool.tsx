@@ -254,7 +254,7 @@ export function CreatePool() {
         </Field>
         {usesKeyPick ? (
           <Field
-            label="Key picks ★ pays out the top"
+            label="Key-pick prize pays out the top"
             hint="0 means the key total only breaks ties and pays nothing."
           >
             <input

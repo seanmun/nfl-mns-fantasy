@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
 import { createApi, type StandingsRow } from '@/lib/api/client'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
+import { ChevronLeft, ChevronRight, Star, Trophy } from 'lucide-react'
 import { Button, Chip, EmptyState, ListRow, PageHeader, Skeleton } from '@/ui/components'
 
 // Re-rank the same rows by any metric — a sort is a VIEW; the pool's
@@ -99,7 +100,7 @@ export function PoolStandings() {
           : data.rows
   const views: Array<[string, string]> = [
     ['points', 'Points'],
-    ['key', 'Key ★'],
+    ['key', 'Key'],
     ['week', 'By week'],
     ...segments.map((s, i): [string, string] => [`seg-${i}`, `Wks ${s.startWeek}–${s.endWeek}`]),
   ]
@@ -111,13 +112,13 @@ export function PoolStandings() {
         back={`/pool/${poolId}`}
         backLabel="Pool home"
         title={data.final ? 'Final standings' : 'Standings'}
-        status="Most points wins. The key ★ total only breaks ties."
+        status="Most points wins. The key-pick total only breaks ties."
       />
 
       {data.final && champions.length ? (
         <div className="rounded-xl border-2 border-[var(--color-key)] bg-[var(--color-card)] p-5 text-center">
-          <p className="text-[2rem] leading-none" aria-hidden="true">
-            &#127942;
+          <p className="flex justify-center text-[var(--color-key)]">
+            <Trophy size={34} aria-hidden="true" />
           </p>
           <p className="mt-2 text-[0.72rem] font-bold tracking-[0.14em] uppercase text-[var(--color-key)]">
             {champions.length > 1 ? 'Champions' : 'Champion'}
@@ -126,7 +127,7 @@ export function PoolStandings() {
             {champions.map((c) => c.entryName).join(' & ')}
           </p>
           <p className="text-[var(--color-muted-foreground)] tabular-nums">
-            {champions[0].totalPoints} points · key ★ {champions[0].keyPickScore}
+            {champions[0].totalPoints} points · key <Star size={16} fill="currentColor" aria-hidden="true" className="inline-block align-[-0.1em]" /> {champions[0].keyPickScore}
           </p>
         </div>
       ) : null}
@@ -161,7 +162,7 @@ export function PoolStandings() {
             disabled={weekIdx <= 0}
             onClick={() => setWeekNo(gradedWeeks[weekIdx - 1])}
           >
-            &lsaquo; Prev
+            <ChevronLeft size={20} aria-hidden="true" /> Prev
           </Button>
           <b className="text-[1.1rem] text-center">
             {data.weeks.find((w) => w.week === shownWeek)?.label ?? `Week ${shownWeek}`}
@@ -171,7 +172,7 @@ export function PoolStandings() {
             disabled={weekIdx >= gradedWeeks.length - 1}
             onClick={() => setWeekNo(gradedWeeks[weekIdx + 1])}
           >
-            Next &rsaquo;
+            Next <ChevronRight size={20} aria-hidden="true" />
           </Button>
         </div>
       ) : null}
@@ -249,7 +250,7 @@ export function PoolStandings() {
                 <>{record(segCells(r))}</>
               ) : (
                 <>
-                  <span className="text-[var(--color-key)]">★{r.keyPickScore}</span> · wk{' '}
+                  <span className="text-[var(--color-key)]"><Star size={13} fill="currentColor" aria-hidden="true" className="inline-block align-[-0.1em]" />{r.keyPickScore}</span> · wk{' '}
                   {lwPoints(r)} · {record(r.weekly)}
                 </>
               )
@@ -296,8 +297,8 @@ export function PoolStandings() {
 
       {view === 'points' || view === 'key' ? (
         <p className="text-[0.85rem] text-[var(--color-muted-foreground)]">
-          Ties break on the key ★ column. A key pick scores no extra points during the
-          week — it only decides ties.
+          Ties break on the key-pick column. A key pick scores no extra points during
+          the week — it only decides ties.
         </p>
       ) : null}
 

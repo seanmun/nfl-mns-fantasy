@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { Check, Coins, House, Trophy } from 'lucide-react'
 import { AssistantChat, BottomTabBar, Sheet } from '@/ui/components'
 
 const HUB = import.meta.env.VITE_PLATFORM_URL || 'https://mnsfantasy.com'
@@ -59,7 +60,8 @@ export function PoolTabBar() {
         basePath={`/pool/${poolId}`}
         onAsk={() => setAskOpen(true)}
         askLabel="Ask Bump"
-        extraTab={{ path: 'prizes', label: 'Prizes', icon: '\u{1F4B0}' }}
+        icons={{ home: <House />, play: <Check />, standings: <Trophy /> }}
+        extraTab={{ path: 'prizes', label: 'Prizes', icon: <Coins /> }}
       />
       <Sheet
         open={askOpen}

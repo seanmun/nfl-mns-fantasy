@@ -193,6 +193,17 @@ export function Skeleton({ h = '1rem', w = '100%' }: { h?: string; w?: string })
   return <div className="mns-skel" style={{ height: h, width: w }} aria-hidden="true" />
 }
 
+// Fallback tab icons — lucide's paths, inlined so mns-ui needs no icon
+// package. An app passes its own lucide-react components instead.
+const glyph = (d: ReactNode) => (
+  <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {d}
+  </svg>
+)
+const HomeGlyph = () => glyph(<><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" /><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></>)
+const CheckGlyph = () => glyph(<path d="M20 6 9 17l-5-5" />)
+const TrophyGlyph = () => glyph(<><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0z" /></>)
+
 // ── BottomTabBar ────────────────────────────────────────────────────
 // One nav model for every game: Home · Play · Standings inside a
 // context. `basePath` is the context root (/pool/:id or /league/:id).
@@ -201,12 +212,18 @@ export function Skeleton({ h = '1rem', w = '100%' }: { h?: string; w?: string })
 // navigates nowhere, so the tab model stays intact underneath.
 // `extraTab` adds a fourth tab after Standings (NFL: Prizes), which
 // also balances the bar two-and-two around the Ask button.
+//
+// Icons are passed IN (`icons`, and extraTab.icon) so an app can hand
+// over its own lucide-react components; mns-ui carries no icon
+// dependency of its own, because not every app installs one. The
+// fallbacks below are lucide's paths inlined — same drawing, no import.
 export function BottomTabBar({
   basePath,
   playLabel = 'Picks',
   playPath = 'picks',
   onAsk,
   askLabel = 'Ask',
+  icons,
   extraTab,
 }: {
   basePath: string
@@ -214,13 +231,14 @@ export function BottomTabBar({
   playPath?: string
   onAsk?: () => void
   askLabel?: string
-  extraTab?: { path: string; label: string; icon: string }
+  icons?: { home?: ReactNode; play?: ReactNode; standings?: ReactNode }
+  extraTab?: { path: string; label: string; icon: ReactNode }
 }) {
   const { pathname } = useLocation()
   const tabs = [
-    { to: basePath, label: 'Home', icon: '\u{1F3E0}', exact: true },
-    { to: `${basePath}/${playPath}`, label: playLabel, icon: '✓', exact: false },
-    { to: `${basePath}/standings`, label: 'Standings', icon: '\u{1F3C6}', exact: false },
+    { to: basePath, label: 'Home', icon: icons?.home ?? <HomeGlyph />, exact: true },
+    { to: `${basePath}/${playPath}`, label: playLabel, icon: icons?.play ?? <CheckGlyph />, exact: false },
+    { to: `${basePath}/standings`, label: 'Standings', icon: icons?.standings ?? <TrophyGlyph />, exact: false },
     ...(extraTab
       ? [{ to: `${basePath}/${extraTab.path}`, label: extraTab.label, icon: extraTab.icon, exact: false }]
       : []),

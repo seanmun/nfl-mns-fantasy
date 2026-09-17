@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api/client'
 import { kickoffLabel, dayLabel } from '@/lib/utils'
+import { Lock } from 'lucide-react'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
 
 // The manager's week builder: tick the games that count, set the
@@ -357,8 +358,8 @@ function AdminGameRow({
           {game.locked ? (
             <span className="font-mono font-bold tabular-nums text-[1.1rem]">
               {game.spread}
-              <span className="ml-2 text-[0.7rem] uppercase tracking-wider text-[var(--color-locked)]">
-                &#128274; locked
+              <span className="ml-2 inline-flex items-center gap-1 align-[-0.1em] text-[0.7rem] uppercase tracking-wider text-[var(--color-locked)]">
+                <Lock size={13} aria-hidden="true" /> locked
               </span>
             </span>
           ) : (
