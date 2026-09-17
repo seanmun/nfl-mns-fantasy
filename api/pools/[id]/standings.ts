@@ -16,6 +16,15 @@ import {
 import { rankStandings } from '../../../src/lib/scoring/standings.js'
 import type { PrizesConfig } from '../../../src/lib/db/schema.js'
 
+// Prize rules for a pool created before prize settings existed: one
+// season winner. Also what a first pot save builds on.
+const DEFAULT_PRIZE_RULES: PrizesConfig = {
+  seasonPlaces: 1,
+  keyPlaces: 0,
+  lastPlace: false,
+  segments: [],
+}
+
 // GET /api/pools/:id/standings — the leaderboard.
 //
 // Reads the grader's rollups (pool_entries totals, entry_weeks per week)
@@ -94,6 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       managerNote?: string | null
       rulesMarkdown?: string | null
       reminderHoursBefore?: number | null
+      prizePool?: { potUsd?: unknown; shares?: Record<string, unknown> }
     }
     const patch: Record<string, unknown> = {}
     if (typeof sIn.name === 'string') {
@@ -108,6 +118,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         sIn.reminderHoursBefore == null
           ? null
           : Math.max(1, Math.min(96, Number(sIn.reminderHoursBefore) || 24))
+    }
+    // The tracked prize pool: the pot's dollar value and each paid
+    // place's percent of it, keyed exactly as GET's prizePool.items.
+    // Absorbs rather than refuses — shares that don't total 100 save
+    // (the page shows what's unassigned), and an unreadable pot keeps
+    // the last good value.
+    if (sIn.prizePool && typeof sIn.prizePool === 'object') {
+      const current = (ctx.pool.prizesConfig as PrizesConfig | null) ?? DEFAULT_PRIZE_RULES
+      const shares = sIn.prizePool.shares ?? {}
+      const pct = (key: string): number | null => {
+        const v = shares[key]
+        if (v == null || v === '') return null
+        const n = Number(v)
+        return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n * 100) / 100)) : null
+      }
+      const raw = sIn.prizePool.potUsd
+      const potUsd =
+        raw == null || raw === ''
+          ? null
+          : Number.isFinite(Number(raw))
+            ? Math.max(0, Math.min(100_000_000, Math.round(Number(raw) * 100) / 100))
+            : current.potUsd ?? null
+      const next: PrizesConfig = {
+        ...current,
+        potUsd,
+        potUpdatedAt:
+          potUsd !== (current.potUsd ?? null) ? new Date().toISOString() : current.potUpdatedAt ?? null,
+        seasonShares: Array.from({ length: current.seasonPlaces }, (_, i) => pct(`season-${i + 1}`)),
+        keyShares: Array.from({ length: current.keyPlaces }, (_, i) => pct(`key-${i + 1}`)),
+        lastPlaceShare: current.lastPlace ? pct('last') : null,
+        segments: current.segments.map((seg, si) => ({
+          ...seg,
+          shares: Array.from({ length: seg.places }, (_, i) => pct(`seg-${si}-${i + 1}`)),
+        })),
+      }
+      patch.prizesConfig = next
     }
     if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change.' })
     await db.update(nflPools).set(patch).where(eq(nflPools.id, poolId))
@@ -244,115 +290,221 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // never full tables. Segments pay out as soon as THEIR weeks are all
   // decided; season/key/last-place wait for the whole season.
   const prizes = (ctx.pool.prizesConfig ?? null) as PrizesConfig | null
-  let winners = null
-  if (prizes) {
-    const nameOf = (entryId: string) => {
-      const e = byEntry.get(entryId)
-      return {
-        entryId,
-        entryName: e?.entryName ?? 'Entry',
-        ownerName: e ? nameByUser.get(e.userId) ?? null : null,
-      }
-    }
+  // A pool that predates prize settings still has a prize page: one
+  // season winner, nothing else, until the manager says otherwise.
+  const rules: PrizesConfig = prizes ?? DEFAULT_PRIZE_RULES
 
-    // Per-week decidedness for segment payouts, one query for the pool.
-    const slateStatus = await db
-      .select({
-        weekId: nflPoolGames.weekId,
-        isIncluded: nflPoolGames.isIncluded,
-        status: nflGames.status,
-      })
-      .from(nflPoolGames)
-      .innerJoin(nflGames, eq(nflGames.id, nflPoolGames.gameId))
-      .where(eq(nflPoolGames.poolId, poolId))
-    const weekDecided = (weekId: string) => {
-      const games = slateStatus.filter((g) => g.weekId === weekId && g.isIncluded)
-      return (
-        games.length > 0 &&
-        games.every((g) => g.status === 'final' || g.status === 'cancelled')
-      )
-    }
-    const weekIdByNo = new Map(weeksSorted.map((w) => [w.week, w.weekId]))
-
-    const rankRows = (rows: Array<{ entryId: string; points: number }>) => {
-      const sorted = [...rows].sort((a, b) => b.points - a.points)
-      let rank = 0
-      return sorted.map((row, i) => {
-        if (!(i > 0 && sorted[i - 1].points === row.points)) rank = i + 1
-        return { ...row, rank }
-      })
-    }
-
-    const segments = prizes.segments.map((seg) => {
-      const weekNos = Array.from(
-        { length: seg.endWeek - seg.startWeek + 1 },
-        (_, i) => seg.startWeek + i
-      )
-      const ids = weekNos.map((n) => weekIdByNo.get(n)).filter((x): x is string => !!x)
-      // Every week in the span must exist AND be decided before a
-      // segment pays — a "winner" with games outstanding is a lie.
-      const complete = ids.length === weekNos.length && ids.every(weekDecided)
-      const totals = entries.map((e) => ({
-        entryId: e.id,
-        points: weekRows
-          .filter((r) => r.entryId === e.id && ids.includes(r.weekId))
-          .reduce((n, r) => n + r.points, 0),
-      }))
-      const rankedSeg = rankRows(totals)
-      return {
-        name: seg.name,
-        startWeek: seg.startWeek,
-        endWeek: seg.endWeek,
-        places: seg.places,
-        complete,
-        winners: complete
-          ? rankedSeg
-              .filter((r) => r.rank <= seg.places)
-              .map((r) => ({ ...nameOf(r.entryId), points: r.points, rank: r.rank }))
-          : [],
-      }
-    })
-
-    // Key ranking mirrors the client's tab-2 order.
-    const keyRanked = [...ranked].sort(
-      (a, b) => b.keyPickScore - a.keyPickScore || b.totalPoints - a.totalPoints
-    )
-    let kRank = 0
-    const keyWithRank = keyRanked.map((r, i) => {
-      const prev = keyRanked[i - 1]
-      if (!(prev && prev.keyPickScore === r.keyPickScore && prev.totalPoints === r.totalPoints))
-        kRank = i + 1
-      return { ...r, keyRank: kRank }
-    })
-
-    const bottomPoints = ranked.length
-      ? Math.min(...ranked.map((r) => r.totalPoints))
-      : null
-
-    winners = {
-      season: seasonOver
-        ? ranked
-            .filter((r) => r.rank <= prizes.seasonPlaces)
-            .map((r) => ({ ...nameOf(r.entryId), points: r.totalPoints, rank: r.rank }))
-        : [],
-      seasonPlaces: prizes.seasonPlaces,
-      key:
-        seasonOver && prizes.keyPlaces > 0
-          ? keyWithRank
-              .filter((r) => r.keyRank <= prizes.keyPlaces)
-              .map((r) => ({ ...nameOf(r.entryId), points: r.keyPickScore, rank: r.keyRank }))
-          : [],
-      keyPlaces: prizes.keyPlaces,
-      lastPlace:
-        seasonOver && prizes.lastPlace && bottomPoints != null
-          ? ranked
-              .filter((r) => r.totalPoints === bottomPoints)
-              .map((r) => ({ ...nameOf(r.entryId), points: r.totalPoints, rank: r.rank }))
-          : [],
-      lastPlaceEnabled: prizes.lastPlace,
-      segments,
+  const nameOf = (entryId: string) => {
+    const e = byEntry.get(entryId)
+    return {
+      entryId,
+      entryName: e?.entryName ?? 'Entry',
+      ownerName: e ? nameByUser.get(e.userId) ?? null : null,
     }
   }
+
+  // Per-week decidedness for segment payouts, one query for the pool.
+  const slateStatus = await db
+    .select({
+      weekId: nflPoolGames.weekId,
+      isIncluded: nflPoolGames.isIncluded,
+      status: nflGames.status,
+    })
+    .from(nflPoolGames)
+    .innerJoin(nflGames, eq(nflGames.id, nflPoolGames.gameId))
+    .where(eq(nflPoolGames.poolId, poolId))
+  const weekDecided = (weekId: string) => {
+    const games = slateStatus.filter((g) => g.weekId === weekId && g.isIncluded)
+    return (
+      games.length > 0 &&
+      games.every((g) => g.status === 'final' || g.status === 'cancelled')
+    )
+  }
+  const weekIdByNo = new Map(weeksSorted.map((w) => [w.week, w.weekId]))
+
+  const rankRows = (rows: Array<{ entryId: string; points: number }>) => {
+    const sorted = [...rows].sort((a, b) => b.points - a.points)
+    let rank = 0
+    return sorted.map((row, i) => {
+      if (!(i > 0 && sorted[i - 1].points === row.points)) rank = i + 1
+      return { ...row, rank }
+    })
+  }
+
+  const segCalc = rules.segments.map((seg) => {
+    const weekNos = Array.from(
+      { length: seg.endWeek - seg.startWeek + 1 },
+      (_, i) => seg.startWeek + i
+    )
+    const ids = weekNos.map((n) => weekIdByNo.get(n)).filter((x): x is string => !!x)
+    // Every week in the span must exist AND be decided before a
+    // segment pays — a "winner" with games outstanding is a lie.
+    const complete = ids.length === weekNos.length && ids.every(weekDecided)
+    const started = weekRows.some((r) => r.gradedAt != null && ids.includes(r.weekId))
+    const totals = entries.map((e) => ({
+      entryId: e.id,
+      points: weekRows
+        .filter((r) => r.entryId === e.id && ids.includes(r.weekId))
+        .reduce((n, r) => n + r.points, 0),
+    }))
+    return { seg, complete, started, rankedSeg: rankRows(totals) }
+  })
+
+  // Key ranking mirrors the client's tab-2 order.
+  const keyRanked = [...ranked].sort(
+    (a, b) => b.keyPickScore - a.keyPickScore || b.totalPoints - a.totalPoints
+  )
+  let kRank = 0
+  const keyWithRank = keyRanked.map((r, i) => {
+    const prev = keyRanked[i - 1]
+    if (!(prev && prev.keyPickScore === r.keyPickScore && prev.totalPoints === r.totalPoints))
+      kRank = i + 1
+    return { ...r, keyRank: kRank }
+  })
+
+  const bottomPoints = ranked.length
+    ? Math.min(...ranked.map((r) => r.totalPoints))
+    : null
+
+  const winners = prizes
+    ? {
+        season: seasonOver
+          ? ranked
+              .filter((r) => r.rank <= prizes.seasonPlaces)
+              .map((r) => ({ ...nameOf(r.entryId), points: r.totalPoints, rank: r.rank }))
+          : [],
+        seasonPlaces: prizes.seasonPlaces,
+        key:
+          seasonOver && prizes.keyPlaces > 0
+            ? keyWithRank
+                .filter((r) => r.keyRank <= prizes.keyPlaces)
+                .map((r) => ({ ...nameOf(r.entryId), points: r.keyPickScore, rank: r.keyRank }))
+            : [],
+        keyPlaces: prizes.keyPlaces,
+        lastPlace:
+          seasonOver && prizes.lastPlace && bottomPoints != null
+            ? ranked
+                .filter((r) => r.totalPoints === bottomPoints)
+                .map((r) => ({ ...nameOf(r.entryId), points: r.totalPoints, rank: r.rank }))
+            : [],
+        lastPlaceEnabled: prizes.lastPlace,
+        segments: segCalc.map(({ seg, complete, rankedSeg }) => ({
+          name: seg.name,
+          startWeek: seg.startWeek,
+          endWeek: seg.endWeek,
+          places: seg.places,
+          complete,
+          winners: complete
+            ? rankedSeg
+                .filter((r) => r.rank <= seg.places)
+                .map((r) => ({ ...nameOf(r.entryId), points: r.points, rank: r.rank }))
+            : [],
+        })),
+      }
+    : null
+
+  // ── Prize pool ──────────────────────────────────────────────────
+  // One item per paid place: its share of the pot, and who holds it
+  // RIGHT NOW (or who won it). TRACKED only — the app never holds or
+  // moves the pot. A share the manager has not set shows as unset,
+  // never guessed. Item keys are what the settings POST writes back.
+  const pot = rules.potUsd ?? null
+  const anyGraded = weekRows.some((r) => r.gradedAt != null)
+  // Who holds place p in a competition ranking: the tied group whose
+  // span covers p — two level at the top hold 1st AND 2nd between them.
+  const holders = <T extends { entryId: string }>(
+    rows: T[],
+    rankOf: (r: T) => number,
+    place: number
+  ): T[] => {
+    const size = new Map<number, number>()
+    for (const r of rows) size.set(rankOf(r), (size.get(rankOf(r)) ?? 0) + 1)
+    return rows.filter((r) => rankOf(r) <= place && place < rankOf(r) + (size.get(rankOf(r)) ?? 0))
+  }
+  const ordinal = (n: number) =>
+    `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
+  const amountOf = (share: number | null) =>
+    pot != null && share != null ? Math.round(pot * share) / 100 : null
+  type PrizeStatus = 'final' | 'live' | 'upcoming'
+  const items: Array<{
+    key: string
+    label: string
+    detail: string | null
+    share: number | null
+    amountUsd: number | null
+    status: PrizeStatus
+    unit: string
+    leaders: Array<{ entryId: string; entryName: string; ownerName: string | null; points: number }>
+  }> = []
+  const seasonStatus: PrizeStatus = seasonOver ? 'final' : anyGraded ? 'live' : 'upcoming'
+
+  for (let p = 1; p <= rules.seasonPlaces; p++) {
+    const share = rules.seasonShares?.[p - 1] ?? null
+    items.push({
+      key: `season-${p}`,
+      label: rules.seasonPlaces === 1 ? 'Season winner' : `Season ${ordinal(p)}`,
+      detail: 'Most points all season',
+      share,
+      amountUsd: amountOf(share),
+      status: seasonStatus,
+      unit: 'pts',
+      leaders: anyGraded
+        ? holders(ranked, (r) => r.rank, p).map((r) => ({ ...nameOf(r.entryId), points: r.totalPoints }))
+        : [],
+    })
+  }
+  segCalc.forEach(({ seg, complete, started, rankedSeg }, si) => {
+    for (let p = 1; p <= seg.places; p++) {
+      const share = seg.shares?.[p - 1] ?? null
+      items.push({
+        key: `seg-${si}-${p}`,
+        label: `Weeks ${seg.startWeek}–${seg.endWeek}${seg.places > 1 ? ` ${ordinal(p)}` : ''}`,
+        detail: started || complete ? `Most points in weeks ${seg.startWeek}–${seg.endWeek}` : `Starts Week ${seg.startWeek}`,
+        share,
+        amountUsd: amountOf(share),
+        status: complete ? 'final' : started ? 'live' : 'upcoming',
+        unit: 'pts',
+        leaders:
+          started || complete
+            ? holders(rankedSeg, (r) => r.rank, p).map((r) => ({ ...nameOf(r.entryId), points: r.points }))
+            : [],
+      })
+    }
+  })
+  for (let p = 1; p <= rules.keyPlaces; p++) {
+    const share = rules.keyShares?.[p - 1] ?? null
+    items.push({
+      key: `key-${p}`,
+      label: rules.keyPlaces === 1 ? 'Key picks ★' : `Key picks ★ ${ordinal(p)}`,
+      detail: 'Best key-pick record all season',
+      share,
+      amountUsd: amountOf(share),
+      status: seasonStatus,
+      unit: 'key ★',
+      leaders: anyGraded
+        ? holders(keyWithRank, (r) => r.keyRank, p).map((r) => ({ ...nameOf(r.entryId), points: r.keyPickScore }))
+        : [],
+    })
+  }
+  if (rules.lastPlace) {
+    const share = rules.lastPlaceShare ?? null
+    items.push({
+      key: 'last',
+      label: 'Last place',
+      detail: 'Fewest points all season',
+      share,
+      amountUsd: amountOf(share),
+      status: seasonStatus,
+      unit: 'pts',
+      leaders:
+        anyGraded && bottomPoints != null
+          ? ranked
+              .filter((r) => r.totalPoints === bottomPoints)
+              .map((r) => ({ ...nameOf(r.entryId), points: r.totalPoints }))
+          : [],
+    })
+  }
+  const prizePool = { potUsd: pot, potUpdatedAt: rules.potUpdatedAt ?? null, items }
 
   // Benched and banned, admins only — the roster's back room.
   const inactive = ctx.isPoolAdmin
@@ -369,7 +521,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   return res.status(200).json({
     final: seasonOver,
+    // Whether the CALLER runs this pool — the prize page offers the
+    // pot and payout editor only to them.
+    manager: ctx.isPoolAdmin,
     winners,
+    prizePool,
     inactive,
     weeks: weeksSorted.map((w) => ({ week: w.week, label: w.label })),
     rows: ranked.map((r) => {

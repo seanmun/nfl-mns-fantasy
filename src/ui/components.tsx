@@ -198,25 +198,32 @@ export function Skeleton({ h = '1rem', w = '100%' }: { h?: string; w?: string })
 // context. `basePath` is the context root (/pool/:id or /league/:id).
 // `onAsk` adds the assistant button in the bar's center — a BUTTON,
 // not a tab: it opens the assistant sheet over the current screen and
-// navigates nowhere, so the three-tab model stays intact underneath.
+// navigates nowhere, so the tab model stays intact underneath.
+// `extraTab` adds a fourth tab after Standings (NFL: Prizes), which
+// also balances the bar two-and-two around the Ask button.
 export function BottomTabBar({
   basePath,
   playLabel = 'Picks',
   playPath = 'picks',
   onAsk,
   askLabel = 'Ask',
+  extraTab,
 }: {
   basePath: string
   playLabel?: string
   playPath?: string
   onAsk?: () => void
   askLabel?: string
+  extraTab?: { path: string; label: string; icon: string }
 }) {
   const { pathname } = useLocation()
   const tabs = [
     { to: basePath, label: 'Home', icon: '\u{1F3E0}', exact: true },
     { to: `${basePath}/${playPath}`, label: playLabel, icon: '✓', exact: false },
     { to: `${basePath}/standings`, label: 'Standings', icon: '\u{1F3C6}', exact: false },
+    ...(extraTab
+      ? [{ to: `${basePath}/${extraTab.path}`, label: extraTab.label, icon: extraTab.icon, exact: false }]
+      : []),
   ]
   const renderTab = (t: (typeof tabs)[number]) => {
     const active = t.exact ? pathname === t.to : pathname.startsWith(t.to)
@@ -235,7 +242,7 @@ export function BottomTabBar({
     )
   }
   return (
-    <nav aria-label="Sections" className="mns-tabbar">
+    <nav aria-label="Sections" className={'mns-tabbar' + (extraTab ? ' mns-tabbar--four' : '')}>
       {renderTab(tabs[0])}
       {renderTab(tabs[1])}
       {onAsk ? (
@@ -250,6 +257,7 @@ export function BottomTabBar({
         </button>
       ) : null}
       {renderTab(tabs[2])}
+      {tabs[3] ? renderTab(tabs[3]) : null}
     </nav>
   )
 }

@@ -240,9 +240,13 @@ export const nflPools = nflSchema.table('pools', {
   //   seasonPlaces  top N season-points places (ties included by rank)
   //   keyPlaces     top N key-pick places, 0 = none
   //   lastPlace     celebrate the season's last place
-  //   segments      [{ name, startWeek, endWeek, places }] — any
-  //                 grouping of weeks; each pays its own top-N on the
-  //                 points earned inside that span.
+  //   segments      [{ name, startWeek, endWeek, places, shares? }] —
+  //                 any grouping of weeks; each pays its own top-N on
+  //                 the points earned inside that span.
+  //   potUsd, *Shares, lastPlaceShare
+  //                 the tracked prize pool and each prize's percent of
+  //                 it — display only, set on Pool Settings. JSON, not
+  //                 columns, so adding them needed no migration.
   prizesConfig: jsonb('prizes_config').$type<PrizesConfig>(),
 
   // How pool_weeks.pickDeadlineAt is computed when a week is published.
@@ -619,6 +623,8 @@ export interface PrizeSegment {
   startWeek: number
   endWeek: number
   places: number
+  // Percent of the pot per place, index 0 = 1st. Missing = not set.
+  shares?: Array<number | null>
 }
 
 export interface PrizesConfig {
@@ -626,6 +632,15 @@ export interface PrizesConfig {
   keyPlaces: number
   lastPlace: boolean
   segments: PrizeSegment[]
+  // ── Prize pool: TRACKED, never handled ──
+  // The app holds no money and moves none. The manager types what the
+  // pot is worth; payouts are PERCENTS of it, so every prize follows the
+  // pot when its value moves (a pot later held in BTC/ETH included).
+  potUsd?: number | null
+  potUpdatedAt?: string | null
+  seasonShares?: Array<number | null>
+  keyShares?: Array<number | null>
+  lastPlaceShare?: number | null
 }
 
 export type EntryStatus = 'active' | 'benched' | 'banned'

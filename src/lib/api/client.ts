@@ -251,12 +251,38 @@ export interface WinnersCircle {
   }>
 }
 
+// One paid place: its share of the tracked pot and who holds it now.
+export interface PrizeItem {
+  // 'season-1', 'seg-0-1', 'key-1', 'last' — what settings writes back.
+  key: string
+  label: string
+  detail: string | null
+  // Percent of the pot; null = the manager hasn't set it.
+  share: number | null
+  amountUsd: number | null
+  // final = decided; live = has leaders now; upcoming = not started.
+  status: 'final' | 'live' | 'upcoming'
+  unit: string
+  // Ties hold a place together, so this can be several entries.
+  leaders: Array<{ entryId: string; entryName: string; ownerName: string | null; points: number }>
+}
+
+// The prize pool is TRACKED, never handled: no money moves through the app.
+export interface PrizePool {
+  potUsd: number | null
+  potUpdatedAt: string | null
+  items: PrizeItem[]
+}
+
 export interface StandingsResponse {
   // True only when the pool's last week is fully decided — the signal
   // for the season-end presentation.
   final: boolean
+  // Whether the caller runs this pool.
+  manager: boolean
   // Null when the pool has no prize config.
   winners: WinnersCircle | null
+  prizePool: PrizePool
   // Benched and banned entries — admins only, empty for members.
   inactive: Array<{
     entryId: string
@@ -372,6 +398,7 @@ export function createApi(getToken: GetToken) {
         managerNote?: string | null
         rulesMarkdown?: string | null
         reminderHoursBefore?: number | null
+        prizePool?: { potUsd: number | string | null; shares: Record<string, number | string | null> }
       }
     ) =>
       request<{ ok: true }>(getToken, `/api/pools/${poolId}/standings`, {

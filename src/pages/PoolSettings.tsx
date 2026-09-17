@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createApi } from '@/lib/api/client'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
+import { usd } from '@/lib/utils'
+import { Field } from '@/ui/components'
 
-// Pool Settings — the owner-verbs page. Name, note, rules, reminder
-// timing. Everything else stays where it lives (slate on Manage Week,
+// Pool Settings — the owner-verbs page. Name, note, the tracked prize
+// pool. Everything else stays where it lives (slate on Manage Week,
 // people on Manage Entries).
 export function PoolSettings() {
   const { id: poolId = '' } = useParams()
@@ -29,13 +31,56 @@ export function PoolSettings() {
     }
   }, [data])
 
+  // The prize pool rides on the standings response: the pot and one
+  // item per paid place, keyed the way the save writes them back.
+  const { data: standings } = useQuery({
+    queryKey: ['standings', poolId],
+    queryFn: () => api.getStandings(poolId),
+  })
+  const items = standings?.prizePool.items ?? []
+  // Kept as typed text so "12." mid-typing survives. Seeded ONCE — a
+  // background refetch must never wipe what the manager is typing.
+  const [pot, setPot] = useState('')
+  const [shares, setShares] = useState<Record<string, string>>({})
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (!standings || seeded.current) return
+    seeded.current = true
+    setPot(standings.prizePool.potUsd != null ? String(standings.prizePool.potUsd) : '')
+    setShares(
+      Object.fromEntries(
+        standings.prizePool.items.map((i) => [i.key, i.share != null ? String(i.share) : ''])
+      )
+    )
+  }, [standings])
+
+  const potValue = pot.trim() === '' ? null : Number(pot)
+  const shareValue = (key: string) => {
+    const v = (shares[key] ?? '').trim()
+    return v === '' || !Number.isFinite(Number(v)) ? null : Number(v)
+  }
+  const assigned =
+    Math.round(items.reduce((n, i) => n + (shareValue(i.key) ?? 0), 0) * 100) / 100
+
   const save = useMutation({
     mutationFn: () =>
-      api.updatePoolSettings(poolId, { name: name.trim(), managerNote: note }),
+      api.updatePoolSettings(poolId, {
+        name: name.trim(),
+        managerNote: note,
+        ...(standings
+          ? {
+              prizePool: {
+                potUsd: pot.trim() === '' ? null : pot.trim(),
+                shares: Object.fromEntries(items.map((i) => [i.key, (shares[i.key] ?? '').trim()])),
+              },
+            }
+          : {}),
+      }),
     onSuccess: () => {
       toast.success('Saved')
       qc.invalidateQueries({ queryKey: ['picks', poolId] })
       qc.invalidateQueries({ queryKey: ['my-pools'] })
+      qc.invalidateQueries({ queryKey: ['standings', poolId] })
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -88,6 +133,75 @@ export function PoolSettings() {
           className={inputClass + ' py-3 leading-relaxed'}
         />
       </div>
+
+      {standings ? (
+        <section className="flex flex-col gap-4 border-t border-[var(--color-border)] pt-5">
+          <div>
+            <h2 className="text-[1.2rem] font-extrabold">Prize pool</h2>
+            <p className="text-[0.85rem] text-[var(--color-muted-foreground)]">
+              Tracked only — the app never holds or pays out money. Each prize is a percent
+              of the pot, so payouts follow what the pot is worth. Members see all of this
+              on the Prizes tab.
+            </p>
+          </div>
+
+          <Field label="Pot" hint="What the pot is worth right now, in dollars." htmlFor="pool-pot">
+            <input
+              id="pool-pot"
+              value={pot}
+              onChange={(e) => setPot(e.target.value)}
+              inputMode="decimal"
+              placeholder="e.g. 500"
+              className="mns-input"
+            />
+          </Field>
+
+          <div className="flex flex-col gap-3">
+            {items.map((item) => {
+              const share = shareValue(item.key)
+              return (
+                <div key={item.key} className="flex items-center gap-3">
+                  <label htmlFor={`share-${item.key}`} className="flex-1 min-w-0">
+                    <b className="block">{item.label}</b>
+                    <span className="text-[0.85rem] text-[var(--color-muted-foreground)] tabular-nums">
+                      {share != null && potValue != null && Number.isFinite(potValue)
+                        ? `pays ${usd(Math.round(potValue * share) / 100)}`
+                        : item.detail}
+                    </span>
+                  </label>
+                  <span className="flex items-center gap-1.5 font-bold">
+                    <input
+                      id={`share-${item.key}`}
+                      value={shares[item.key] ?? ''}
+                      onChange={(e) =>
+                        setShares((s) => ({ ...s, [item.key]: e.target.value }))
+                      }
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="mns-input w-[5.5rem] text-right tabular-nums"
+                    />
+                    %
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* The split, said plainly. Saving is never blocked by it. */}
+          <p
+            className={
+              'font-semibold tabular-nums ' +
+              (assigned === 100 ? 'text-[var(--color-pick-win)]' : 'text-[var(--color-key)]')
+            }
+          >
+            {assigned === 100
+              ? '✓ Adds up to 100% of the pot'
+              : assigned < 100
+                ? `${assigned}% assigned — ${Math.round((100 - assigned) * 100) / 100}% unassigned`
+                : `${assigned}% assigned — more than the pot`}
+          </p>
+        </section>
+      ) : null}
 
       <button
         onClick={() => save.mutate()}

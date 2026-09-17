@@ -59,6 +59,7 @@ export function PoolTabBar() {
         basePath={`/pool/${poolId}`}
         onAsk={() => setAskOpen(true)}
         askLabel="Ask Bump"
+        extraTab={{ path: 'prizes', label: 'Prizes', icon: '\u{1F4B0}' }}
       />
       <Sheet
         open={askOpen}

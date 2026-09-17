@@ -21,6 +21,28 @@ const ET_DAY = new Intl.DateTimeFormat('en-US', {
   weekday: 'long',
 })
 
+const ET_DATE = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short',
+  day: 'numeric',
+})
+
+// "Sep 17" — a date without a time, in Eastern like every other time.
+export function dateLabel(date: Date | string): string {
+  return ET_DATE.format(new Date(date))
+}
+
+// Dollars for the tracked prize pool: whole dollars stay whole ($500),
+// cents show only when there are some ($83.33).
+export function usd(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
+
 export function kickoffLabel(date: Date | string): string {
   return `${ET_DATETIME.format(new Date(date))} ET`
 }

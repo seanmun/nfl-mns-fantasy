@@ -46,10 +46,19 @@ naming a type after one pool's number is how a setting quietly becomes a
 hardcoded rule.
 
 **The app handles no money.** No entry fees, no paid/unpaid ledger, no
-pot, no processing. Admins settle up however they already do. This is a
+processing. Admins settle up however they already do. This is a
 deliberate scope decision, not an oversight — do not add it without
 asking. Where these notes say "a pool with money in it", that is about
 why correctness matters to members, not about funds moving through here.
+
+**It TRACKS the pot, and only tracks it** (Sept 2026, Prizes tab). The
+manager types what the pot is worth and each paid place's percent of it
+(`prizesConfig.potUsd`, `seasonShares`, `segments[].shares`,
+`keyShares`, `lastPlaceShare` — JSON, no migration). Payouts are
+percents so they follow the pot's value. Planned next: read-only
+tracking of a BTC/EVM wallet the pot is held in — a public address
+only, never keys, never a transaction, with a manager warning that the
+address and its whole history are visible to anyone.
 
 ## Each pool owns its own slate and its own numbers
 
