@@ -221,6 +221,8 @@ export function BottomTabBar({
   basePath,
   playLabel = 'Picks',
   playPath = 'picks',
+  standingsLabel = 'Standings',
+  standingsPath = 'standings',
   onAsk,
   askLabel = 'Ask',
   icons,
@@ -229,6 +231,10 @@ export function BottomTabBar({
   basePath: string
   playLabel?: string
   playPath?: string
+  // The third slot defaults to Standings; a game may repoint it (WNBA:
+  // Players → the free-agent pool, standings living on Home instead).
+  standingsLabel?: string
+  standingsPath?: string
   onAsk?: () => void
   askLabel?: string
   icons?: { home?: ReactNode; play?: ReactNode; standings?: ReactNode }
@@ -238,7 +244,7 @@ export function BottomTabBar({
   const tabs = [
     { to: basePath, label: 'Home', icon: icons?.home ?? <HomeGlyph />, exact: true },
     { to: `${basePath}/${playPath}`, label: playLabel, icon: icons?.play ?? <CheckGlyph />, exact: false },
-    { to: `${basePath}/standings`, label: 'Standings', icon: icons?.standings ?? <TrophyGlyph />, exact: false },
+    { to: `${basePath}/${standingsPath}`, label: standingsLabel, icon: icons?.standings ?? <TrophyGlyph />, exact: false },
     ...(extraTab
       ? [{ to: `${basePath}/${extraTab.path}`, label: extraTab.label, icon: extraTab.icon, exact: false }]
       : []),
