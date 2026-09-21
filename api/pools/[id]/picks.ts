@@ -229,6 +229,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       confidencePoints: p.confidencePoints,
       isKeyPick: p.isKeyPick,
       isAuto: p.isAuto,
+      // The number this pick grades on, so a revealed pick is shown at
+      // the line its owner took rather than the game's current one.
+      lineSpreadAtPick: p.lineSpreadAtPick,
       result: p.result,
       pointsEarned: p.pointsEarned,
     }))

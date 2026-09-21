@@ -67,6 +67,8 @@ export interface ApiOtherPick {
   confidencePoints: number | null
   isKeyPick: boolean
   isAuto: boolean
+  // The line this pick grades on — the pool's number when it was saved.
+  lineSpreadAtPick: number | null
   result: 'pending' | 'win' | 'loss' | 'push' | 'missed'
   pointsEarned: number
 }

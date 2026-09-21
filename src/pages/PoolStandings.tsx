@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
-import { createApi, type StandingsRow } from '@/lib/api/client'
+import { createApi, type ApiOtherPick, type StandingsRow } from '@/lib/api/client'
+import { teamSpread } from '@/lib/utils'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
-import { ChevronLeft, ChevronRight, Star, Trophy } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Star, Trophy } from 'lucide-react'
 import { Button, Chip, EmptyState, ListRow, PageHeader, Skeleton } from '@/ui/components'
 
 // Re-rank the same rows by any metric — a sort is a VIEW; the pool's
@@ -27,6 +28,79 @@ function rankBy(
   })
 }
 
+// One entry's picks for the week on screen: team, the number it took,
+// and a star on the key pick. Nothing else — the row above already
+// carries the score. Only picks the server revealed are here, so a live
+// week fills in game by game.
+function WeekPicks({
+  entryId,
+  picks,
+  slate,
+  spreadMode,
+  loading,
+  failed,
+}: {
+  entryId: string
+  picks: ApiOtherPick[]
+  slate: Array<{ gameId: string; kickoffAt: string; home: { id: string; nickname: string } | null; away: { id: string; nickname: string } | null; spread: number | null }>
+  spreadMode: 'straight_up' | 'ats'
+  loading: boolean
+  failed: boolean
+}) {
+  const gameById = new Map(slate.map((g) => [g.gameId, g]))
+  const mine = picks
+    .filter((p) => p.entryId === entryId)
+    .sort((a, b) =>
+      (gameById.get(a.gameId)?.kickoffAt ?? '').localeCompare(gameById.get(b.gameId)?.kickoffAt ?? '')
+    )
+
+  if (loading) {
+    return <p className="py-1 text-[0.9rem] text-[var(--color-muted-foreground)]">Loading picks…</p>
+  }
+  if (failed) {
+    return <p className="py-1 text-[0.9rem] text-[var(--color-muted-foreground)]">Couldn’t load those picks.</p>
+  }
+  if (!mine.length) {
+    return (
+      <p className="py-1 text-[0.9rem] text-[var(--color-muted-foreground)]">
+        Nothing to show yet — picks appear as each game kicks off.
+      </p>
+    )
+  }
+
+  return (
+    <ul className="py-1 flex flex-col gap-1">
+      {mine.map((p) => {
+        const game = gameById.get(p.gameId)
+        const isHome = p.selectedTeamId === game?.home?.id
+        const team = isHome ? game?.home : game?.away
+        const line =
+          spreadMode === 'ats'
+            ? teamSpread(p.lineSpreadAtPick ?? game?.spread ?? null, isHome ? 'home' : 'away')
+            : null
+        return (
+          <li key={p.gameId} className="flex items-center gap-1.5 text-[0.95rem]">
+            {p.isKeyPick ? (
+              <Star
+                size={14}
+                fill="currentColor"
+                aria-label="key pick"
+                className="shrink-0 text-[var(--color-key)]"
+              />
+            ) : null}
+            <b>{team?.nickname ?? p.selectedTeamId}</b>
+            {line ? (
+              <span className="font-mono text-[0.9rem] text-[var(--color-muted-foreground)]">
+                {line}
+              </span>
+            ) : null}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 // The leaderboard. Total points ranks it, key-pick score breaks ties —
 // the same two columns the comparator uses, in the same order, so what
 // members see is exactly what decides.
@@ -40,12 +114,37 @@ export function PoolStandings() {
   const [view, setView] = useState('points')
   // The week the week view shows; null follows the latest graded week.
   const [weekNo, setWeekNo] = useState<number | null>(null)
+  // Which entry's picks are unfolded in the week view. One at a time.
+  const [openEntry, setOpenEntry] = useState<string | null>(null)
   const { data, isLoading, error } = useQuery({
     queryKey: ['standings', poolId],
     queryFn: () => api.getStandings(poolId),
     refetchInterval: 60_000,
   })
 
+
+  // Weeks ANY row has graded points for, in order. Computed before the
+  // early returns because the picks query below keys on the week on
+  // screen, and hooks cannot sit behind a return.
+  const gradedWeeks = [
+    ...new Set(
+      (data?.rows ?? []).flatMap((r) =>
+        r.weekly.filter((w) => w.points != null).map((w) => w.week)
+      )
+    ),
+  ].sort((a, b) => a - b)
+  const lastWk = gradedWeeks.length ? gradedWeeks[gradedWeeks.length - 1] : null
+  const weekOnScreen = weekNo != null && gradedWeeks.includes(weekNo) ? weekNo : lastWk
+
+  // The week's picks, loaded only once someone unfolds a row — and read
+  // from the picks endpoint, so the reveal rule (each game at its own
+  // kickoff, the rest at the deadline) is enforced in ONE place rather
+  // than re-decided here.
+  const weekPicks = useQuery({
+    queryKey: ['picks', poolId, weekOnScreen ?? undefined],
+    queryFn: () => api.getPicks(poolId, weekOnScreen ?? undefined),
+    enabled: view === 'week' && openEntry != null && weekOnScreen != null,
+  })
 
   if (isLoading) {
     return (
@@ -65,14 +164,7 @@ export function PoolStandings() {
     )
   }
 
-  // Weeks ANY row has graded points for, in order.
-  const gradedWeeks = [
-    ...new Set(
-      data.rows.flatMap((r) => r.weekly.filter((w) => w.points != null).map((w) => w.week))
-    ),
-  ].sort((a, b) => a - b)
   const graded = gradedWeeks.length > 0
-  const lastWk = graded ? gradedWeeks[gradedWeeks.length - 1] : null
   const cellOf = (r: StandingsRow, week: number | null) => r.weekly.find((w) => w.week === week)
   const lwPoints = (r: StandingsRow) => cellOf(r, lastWk)?.points ?? 0
 
@@ -140,7 +232,10 @@ export function PoolStandings() {
             <button
               key={key}
               aria-pressed={view === key}
-              onClick={() => setView(key)}
+              onClick={() => {
+                setView(key)
+                setOpenEntry(null)
+              }}
               className={
                 'min-h-[var(--tap-target-min)] px-1 rounded-lg border-2 font-bold ' +
                 (view === key
@@ -160,7 +255,10 @@ export function PoolStandings() {
           <Button
             variant="quiet"
             disabled={weekIdx <= 0}
-            onClick={() => setWeekNo(gradedWeeks[weekIdx - 1])}
+            onClick={() => {
+              setWeekNo(gradedWeeks[weekIdx - 1])
+              setOpenEntry(null)
+            }}
           >
             <ChevronLeft size={20} aria-hidden="true" /> Prev
           </Button>
@@ -170,7 +268,10 @@ export function PoolStandings() {
           <Button
             variant="quiet"
             disabled={weekIdx >= gradedWeeks.length - 1}
-            onClick={() => setWeekNo(gradedWeeks[weekIdx + 1])}
+            onClick={() => {
+              setWeekNo(gradedWeeks[weekIdx + 1])
+              setOpenEntry(null)
+            }}
           >
             Next <ChevronRight size={20} aria-hidden="true" />
           </Button>
@@ -254,41 +355,80 @@ export function PoolStandings() {
                   {lwPoints(r)} · {record(r.weekly)}
                 </>
               )
-            return (
-              <li key={r.entryId}>
-                <ListRow
-                  mine={r.isMine}
-                  lead={r.rank}
-                  title={
-                    <>
-                      {r.entryName}
-                      {r.isMine ? (
-                        <span className="ml-1.5">
-                          <Chip tone="accent">you</Chip>
-                        </span>
-                      ) : null}
-                      {r.ownerIsAdmin ? (
-                        <span className="ml-1.5">
-                          <Chip tone="key">{r.ownerIsCreator ? 'mgr' : 'adm'}</Chip>
-                        </span>
-                      ) : null}
-                      {r.isEliminated ? (
-                        <span className="ml-1.5">
-                          <Chip tone="loss">out</Chip>
-                        </span>
-                      ) : null}
-                    </>
-                  }
-                  sub={r.ownerName ?? ''}
-                  end={
+            const open = view === 'week' && openEntry === r.entryId
+            const row = (
+              <ListRow
+                mine={r.isMine}
+                lead={r.rank}
+                title={
+                  <>
+                    {r.entryName}
+                    {r.isMine ? (
+                      <span className="ml-1.5">
+                        <Chip tone="accent">you</Chip>
+                      </span>
+                    ) : null}
+                    {r.ownerIsAdmin ? (
+                      <span className="ml-1.5">
+                        <Chip tone="key">{r.ownerIsCreator ? 'mgr' : 'adm'}</Chip>
+                      </span>
+                    ) : null}
+                    {r.isEliminated ? (
+                      <span className="ml-1.5">
+                        <Chip tone="loss">out</Chip>
+                      </span>
+                    ) : null}
+                  </>
+                }
+                sub={r.ownerName ?? ''}
+                end={
+                  <span className="flex items-center gap-2">
                     <span>
                       <b className="block text-[1.2rem] leading-tight">{big}</b>
                       <span className="block text-[0.78rem] text-[var(--color-muted-foreground)]">
                         {rest}
                       </span>
                     </span>
-                  }
-                />
+                    {view === 'week' ? (
+                      <ChevronDown
+                        size={20}
+                        aria-hidden="true"
+                        className={
+                          'shrink-0 text-[var(--color-muted-foreground)] transition-transform ' +
+                          (open ? 'rotate-180' : '')
+                        }
+                      />
+                    ) : null}
+                  </span>
+                }
+              />
+            )
+            return (
+              <li key={r.entryId}>
+                {view === 'week' ? (
+                  <button
+                    onClick={() => setOpenEntry(open ? null : r.entryId)}
+                    aria-expanded={open}
+                    aria-controls={`picks-${r.entryId}`}
+                    className="w-full text-left"
+                  >
+                    {row}
+                  </button>
+                ) : (
+                  row
+                )}
+                {open ? (
+                  <div id={`picks-${r.entryId}`} className="mt-1 mb-2 ml-3 pl-3 border-l-2 border-[var(--color-border-interactive)]">
+                    <WeekPicks
+                      entryId={r.entryId}
+                      picks={weekPicks.data?.others ?? []}
+                      slate={weekPicks.data?.slate ?? []}
+                      spreadMode={weekPicks.data?.pool.spreadMode ?? 'straight_up'}
+                      loading={weekPicks.isLoading}
+                      failed={!!weekPicks.error}
+                    />
+                  </div>
+                ) : null}
               </li>
             )
           })}
