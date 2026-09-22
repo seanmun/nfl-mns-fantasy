@@ -484,17 +484,20 @@ export function Sheet({
   onClose,
   label,
   children,
+  compact,
 }: {
   open: boolean
   onClose: () => void
   label: string
   children: ReactNode
+  /** Size to content instead of the chat sheet's near-full height. */
+  compact?: boolean
 }) {
   if (!open) return null
   return (
     <div className="mns-sheet-backdrop" onClick={onClose}>
       <div
-        className="mns-sheet"
+        className={'mns-sheet' + (compact ? ' mns-sheet--compact' : '')}
         role="dialog"
         aria-modal="true"
         aria-label={label}
@@ -573,10 +576,65 @@ function makeRecognizer(): SpeechRecognitionLike | null {
   return rec
 }
 
-function speakAloud(text: string) {
-  if (!('speechSynthesis' in window)) return
-  window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
+// Two short tones, synthesised rather than shipped as files: no assets,
+// no licence, and nothing to fail to load. Rising = the mic is live,
+// falling = it stopped and Bump is answering. For a member who can't
+// watch the screen these ARE the interface, so they never carry meaning
+// alone — the screen says the same thing in words.
+let toneCtx: AudioContext | null = null
+function earcon(direction: 'start' | 'stop') {
+  try {
+    const Ctor =
+      window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctor) return
+    toneCtx ??= new Ctor()
+    // A context created before the first tap starts suspended; every
+    // call here follows one, so resuming is safe and usually a no-op.
+    void toneCtx.resume()
+    const t = toneCtx.currentTime
+    const osc = toneCtx.createOscillator()
+    const gain = toneCtx.createGain()
+    osc.type = 'sine'
+    const [from, to] = direction === 'start' ? [620, 880] : [660, 400]
+    osc.frequency.setValueAtTime(from, t)
+    osc.frequency.exponentialRampToValueAtTime(to, t + 0.12)
+    // Eased in and out: a square-edged blip clicks on phone speakers.
+    gain.gain.setValueAtTime(0.0001, t)
+    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18)
+    osc.connect(gain)
+    gain.connect(toneCtx.destination)
+    osc.start(t)
+    osc.stop(t + 0.2)
+  } catch {
+    /* no audio here — the words on screen still carry the state */
+  }
+}
+
+// Speaks, and resolves when the speaking has FINISHED. Hands-free waits
+// on this before listening again: a phone cannot record its own voice
+// without hearing itself.
+function speakAloud(text: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (!('speechSynthesis' in window)) return resolve()
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      resolve()
+    }
+    utterance.onend = finish
+    utterance.onerror = finish
+    // Some browsers never fire onend at all. Hands-free waits on this
+    // promise before reopening the mic, so a missing event would hang
+    // the conversation — this caps the wait at a generous reading of
+    // the text (~150 words a minute) plus a few seconds.
+    const words = text.split(/\s+/).filter(Boolean).length
+    window.setTimeout(finish, Math.min(60_000, words * 400 + 4_000))
+    window.speechSynthesis.speak(utterance)
+  })
 }
 
 // What a voice should actually say: markdown syntax stripped, so
@@ -618,9 +676,18 @@ export function AssistantChat({
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [listening, setListening] = useState(false)
-  const [speakReplies, setSpeakReplies] = useState(false)
-  const speakRef = useRef(false)
-  speakRef.current = speakReplies
+  // One switch. On: Bump speaks his replies AND the mic reopens as soon
+  // as he finishes, so the member just talks. Off: tap the mic per
+  // question and read the reply.
+  const [handsFree, setHandsFree] = useState(false)
+  const handsFreeRef = useRef(false)
+  handsFreeRef.current = handsFree
+  // The conversation, readable from inside a recogniser callback —
+  // hands-free sends without a render in between, and state read
+  // through a closure there would be one turn stale.
+  const messagesRef = useRef<AssistantMessage[]>([])
+  // Consecutive turns that heard only noise.
+  const noiseRef = useRef(0)
   const ttsRef = useRef(tts)
   ttsRef.current = tts
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -632,6 +699,8 @@ export function AssistantChat({
   const [voiceSupported] = useState(() => typeof window !== 'undefined' && makeRecognizer() != null)
   const endRef = useRef<HTMLDivElement>(null)
 
+  messagesRef.current = messages
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, busy])
@@ -640,6 +709,7 @@ export function AssistantChat({
   // running behind a closed sheet blocks the next one.
   useEffect(
     () => () => {
+      handsFreeRef.current = false
       retire(recognizerRef.current)
       audioRef.current?.pause()
       if ('speechSynthesis' in window) window.speechSynthesis.cancel()
@@ -661,14 +731,23 @@ export function AssistantChat({
     recognizerRef.current = null
     setListening(false)
     setMicNote(null)
-    const next: AssistantMessage[] = [...messages, { role: 'user', content: trimmed }]
+    const next: AssistantMessage[] = [...messagesRef.current, { role: 'user', content: trimmed }]
     setMessages(next)
     setInput('')
     setBusy(true)
     try {
       const reply = await send(next)
       setMessages([...next, { role: 'assistant', content: reply }])
-      if (speakRef.current) void speakReply(reply)
+      // Speech is separate from the answer, and failing at it must never
+      // overwrite an answer that arrived. Awaited so hands-free does not
+      // reopen the mic over Bump's own voice.
+      if (handsFreeRef.current) {
+        try {
+          await speakReply(reply)
+        } catch {
+          /* the reply is on screen; the voice is a bonus */
+        }
+      }
     } catch (e) {
       setMessages([
         ...next,
@@ -685,7 +764,8 @@ export function AssistantChat({
     }
   }
 
-  const speakReply = async (raw: string) => {
+  // Resolves when the speaking has finished, not when it starts.
+  const speakReply = async (raw: string): Promise<void> => {
     const text = speechText(raw)
     audioRef.current?.pause()
     const seq = speechSeq.current
@@ -698,15 +778,38 @@ export function AssistantChat({
           const url = URL.createObjectURL(blob)
           const audio = new Audio(url)
           audioRef.current = audio
-          audio.onended = () => URL.revokeObjectURL(url)
-          await audio.play()
+          await new Promise<void>((resolve) => {
+            const done = () => {
+              URL.revokeObjectURL(url)
+              resolve()
+            }
+            audio.onended = done
+            audio.onerror = done
+            audio.play().catch(done)
+          })
           return
         }
       } catch {
         /* fall through to the device voice */
       }
     }
-    speakAloud(text)
+    if (seq !== speechSeq.current) return
+    await speakAloud(text)
+  }
+
+  // Reopen the mic for the next turn. iPhone Safari may refuse to start
+  // a recording that no tap asked for; startListening reports that as a
+  // problem, so a refusal ends the conversation with a sound and a line
+  // of words rather than a screen that quietly stopped working.
+  const listenAgain = () => {
+    if (!handsFreeRef.current) return
+    // A breath between turns: back-to-back restarts in a noisy room
+    // (a television during the 1 o'clock games) would spin.
+    window.setTimeout(() => {
+      if (!handsFreeRef.current) return
+      earcon('start')
+      startListeningRef.current()
+    }, 400)
   }
 
   // Every tap starts a FRESH recording, whatever the last one left
@@ -735,7 +838,33 @@ export function AssistantChat({
       setInput(text)
       // One utterance per tap: a final result IS the end, whether or not
       // the phone gets round to firing onend.
-      if (final) setListening(false)
+      if (!final) return
+      setListening(false)
+      if (!handsFreeRef.current) return
+      // The pause that ended the utterance is the send signal. A word or
+      // two off the television is not: too short to be a question, so it
+      // is dropped and the mic simply stays open.
+      const heard = text.trim()
+      if (heard.length < 4) {
+        setInput('')
+        // Nothing but noise, over and over, means the room is winning.
+        // Stop rather than listen forever with the speaker chirping.
+        noiseRef.current += 1
+        if (noiseRef.current >= 5) {
+          earcon('stop')
+          setHandsFree(false)
+          setMicNote('Too noisy to hear you. Tap Hands-free to try again.')
+          return
+        }
+        listenAgain()
+        return
+      }
+      noiseRef.current = 0
+      earcon('stop')
+      void (async () => {
+        await doSendRef.current(heard)
+        listenAgain()
+      })()
     }
     // No start timeout on purpose: the first tap can sit behind the
     // phone's microphone permission prompt for as long as it likes.
@@ -745,6 +874,15 @@ export function AssistantChat({
     rec.onerror = (event) => {
       if (!mine()) return
       setListening(false)
+      // Silence ends a hands-free conversation rather than nagging: the
+      // member walked away, or is watching the game.
+      if (handsFreeRef.current && event.error === 'no-speech') {
+        earcon('stop')
+        setHandsFree(false)
+        setMicNote('Stopped listening. Tap Hands-free to start again.')
+        return
+      }
+      if (handsFreeRef.current) setHandsFree(false)
       setMicNote(micProblem(event.error))
     }
     setMicNote(null)
@@ -754,12 +892,51 @@ export function AssistantChat({
     } catch {
       recognizerRef.current = null
       setListening(false)
-      setMicNote("Voice didn't start — tap the mic to try again.")
+      if (handsFreeRef.current) {
+        // Most likely an iPhone refusing a recording no tap asked for.
+        setHandsFree(false)
+        earcon('stop')
+        setMicNote('Tap the mic to keep going — this phone needs a tap each time.')
+      } else {
+        setMicNote("Voice didn't start — tap the mic to try again.")
+      }
     }
   }
 
+  // Callbacks fire from a recogniser that outlives this render, so the
+  // loop reaches the current versions through refs.
+  const doSendRef = useRef(doSend)
+  doSendRef.current = doSend
+  const startListeningRef = useRef(startListening)
+  startListeningRef.current = startListening
+
+  const toggleHandsFree = () => {
+    if (handsFree) {
+      setHandsFree(false)
+      handsFreeRef.current = false
+      speechSeq.current++
+      audioRef.current?.pause()
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+      retire(recognizerRef.current)
+      recognizerRef.current = null
+      setListening(false)
+      earcon('stop')
+      return
+    }
+    setHandsFree(true)
+    handsFreeRef.current = true
+    noiseRef.current = 0
+    setMicNote(null)
+    earcon('start')
+    startListening()
+  }
+
   const toggleMic = () => {
-    if (!listening) return startListening()
+    if (!listening) {
+      earcon('start')
+      return startListening()
+    }
+    earcon('stop')
     // stop, not retire: the last words still land in the box. The flag
     // clears now rather than waiting on an onend that may never come.
     recognizerRef.current?.stop()
@@ -770,24 +947,20 @@ export function AssistantChat({
     <div className="mns-chat">
       {/* Voice preference lives up top, out of the composer's way. */}
       <div className="mns-chat__bar">
+        {voiceSupported ? (
         <button
           type="button"
-          className={'mns-chat__voice' + (speakReplies ? ' mns-chat__voice--on' : '')}
-          aria-pressed={speakReplies}
-          onClick={() => {
-            if (speakReplies) {
-              if ('speechSynthesis' in window) window.speechSynthesis.cancel()
-              audioRef.current?.pause()
-            }
-            setSpeakReplies((s) => !s)
-          }}
+          className={'mns-chat__voice' + (handsFree ? ' mns-chat__voice--on' : '')}
+          aria-pressed={handsFree}
+          onClick={toggleHandsFree}
         >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 5 6 9H2v6h4l5 4V5z" />
-            {speakReplies ? <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" /> : <path d="m16 9 6 6M22 9l-6 6" />}
+            {handsFree ? <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" /> : <path d="m16 9 6 6M22 9l-6 6" />}
           </svg>
-          {speakReplies ? 'Voice on' : 'Voice off'}
+          {handsFree ? 'Hands-free on' : 'Hands-free'}
         </button>
+        ) : null}
       </div>
       <div className="mns-chat__scroll">
         {messages.length === 0
@@ -815,9 +988,21 @@ export function AssistantChat({
         <div ref={endRef} />
       </div>
 
-      {micNote ? (
-        <p className="mns-chat__note" role="status">
-          {micNote}
+      {/* Whatever the tones just said, in words — the sounds are never
+          the only signal, and a hands-free member needs to see which
+          turn it is. */}
+      {handsFree || micNote ? (
+        <p
+          className={'mns-chat__note' + (handsFree && !micNote ? ' mns-chat__note--live' : '')}
+          role="status"
+        >
+          {micNote
+            ? micNote
+            : listening
+              ? 'Listening — just talk. Tap Hands-free to stop.'
+              : busy
+                ? 'Answering…'
+                : 'Hands-free is on.'}
         </p>
       ) : null}
       <form
