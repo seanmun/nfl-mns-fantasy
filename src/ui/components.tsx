@@ -611,6 +611,13 @@ function earcon(direction: 'start' | 'stop') {
   }
 }
 
+// 44 bytes of silence. Played inside a tap, it unlocks an <audio>
+// element that can then speak a second later, when the answer arrives —
+// phones only allow sound that a tap started, and hands-free's voice
+// always arrives after the tap has ended.
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA='
+
 // Speaks, and resolves when the speaking has FINISHED. Hands-free waits
 // on this before listening again: a phone cannot record its own voice
 // without hearing itself.
@@ -764,7 +771,43 @@ export function AssistantChat({
     }
   }
 
-  // Resolves when the speaking has finished, not when it starts.
+  // Called from a real tap, and only from a tap: hands the later,
+  // untapped voice an audio element and a speech engine that are
+  // already allowed to make sound. Silence now buys a voice later.
+  const primeVoice = () => {
+    try {
+      const el = audioRef.current ?? new Audio()
+      audioRef.current = el
+      el.muted = true
+      el.src = SILENT_WAV
+      void el
+        .play()
+        .then(() => {
+          el.pause()
+          el.currentTime = 0
+          el.muted = false
+        })
+        .catch(() => {
+          el.muted = false
+        })
+    } catch {
+      /* no audio element here; the device voice may still work */
+    }
+    try {
+      if ('speechSynthesis' in window) {
+        const warmup = new SpeechSynthesisUtterance(' ')
+        warmup.volume = 0
+        window.speechSynthesis.speak(warmup)
+      }
+    } catch {
+      /* nothing to warm up */
+    }
+  }
+
+  // Resolves when the speaking has finished, not when it starts. Custom
+  // voice first, the device voice whenever that cannot be heard — a
+  // blocked or failed playback FALLS THROUGH rather than going quiet,
+  // which is how hands-free ended up replying in silence.
   const speakReply = async (raw: string): Promise<void> => {
     const text = speechText(raw)
     audioRef.current?.pause()
@@ -776,18 +819,25 @@ export function AssistantChat({
         if (seq !== speechSeq.current) return
         if (blob) {
           const url = URL.createObjectURL(blob)
-          const audio = new Audio(url)
-          audioRef.current = audio
-          await new Promise<void>((resolve) => {
-            const done = () => {
+          // The element primed by the tap — a freshly built one would be
+          // blocked on a phone.
+          const el = audioRef.current ?? new Audio()
+          audioRef.current = el
+          el.muted = false
+          el.src = url
+          const heard = await new Promise<boolean>((resolve) => {
+            let settled = false
+            const finish = (ok: boolean) => {
+              if (settled) return
+              settled = true
               URL.revokeObjectURL(url)
-              resolve()
+              resolve(ok)
             }
-            audio.onended = done
-            audio.onerror = done
-            audio.play().catch(done)
+            el.onended = () => finish(true)
+            el.onerror = () => finish(false)
+            el.play().catch(() => finish(false))
           })
-          return
+          if (heard) return
         }
       } catch {
         /* fall through to the device voice */
@@ -927,6 +977,7 @@ export function AssistantChat({
     handsFreeRef.current = true
     noiseRef.current = 0
     setMicNote(null)
+    primeVoice()
     earcon('start')
     startListening()
   }
@@ -934,6 +985,7 @@ export function AssistantChat({
   const toggleMic = () => {
     if (!listening) {
       earcon('start')
+      primeVoice()
       return startListening()
     }
     earcon('stop')
