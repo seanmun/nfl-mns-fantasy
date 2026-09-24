@@ -60,6 +60,28 @@ tracking of a BTC/EVM wallet the pot is held in — a public address
 only, never keys, never a transaction, with a manager warning that the
 address and its whole history are visible to anyone.
 
+## Sign-in is ours; sign-up is Clerk's
+
+`src/pages/SignIn.tsx` is a custom screen on Clerk's API (`useSignIn`):
+email, password, and a full-size **Email me a code** button all on one
+screen, plus Google. It exists because Clerk's prebuilt component shows
+one method at a time, and members who signed up with Google or an
+emailed code kept typing a password they never set and never found the
+small "use another method" link (Week 1 beta, Sept 2026).
+
+Two lessons paid for in production the same week:
+
+- **Never style Clerk's prebuilt elements with our classes.** Clerk's
+  card sits outside our theme; in dark mode our white text landed on
+  Clerk's white card. Clerk's own screens keep Clerk's own styling.
+- **Clerk localization keys like `formFieldLabel__password` are global**
+  — a label written for sign-in showed on sign-up, where a password is
+  required. Only `signIn.*` keys are safe to reword.
+
+Sign-up, the Google callback (`/sso-callback`) and everything after
+sign-in stay on Clerk's components. Same instance, same shared session
+cookie, no satellite — see the workspace CLAUDE.md.
+
 ## Each pool owns its own slate and its own numbers
 
 This is the part that most differs from a naive pick'em.

@@ -1,6 +1,14 @@
 import type { ReactNode } from 'react'
 import { Route, Routes } from 'react-router-dom'
-import { RedirectToSignIn, SignIn, SignUp, SignedIn, SignedOut, useUser } from '@clerk/clerk-react'
+import {
+  AuthenticateWithRedirectCallback,
+  RedirectToSignIn,
+  SignUp,
+  SignedIn,
+  SignedOut,
+  useUser,
+} from '@clerk/clerk-react'
+import { SignIn } from '@/pages/SignIn'
 import { AppShell } from '@/components/layout/AppShell'
 import { Home as Landing } from '@/pages/Home'
 import { MyPools } from '@/pages/MyPools'
@@ -53,17 +61,18 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomeRoute />} />
 
+        {/* Our own sign-in (src/pages/SignIn.tsx): every way in on one
+            screen. Sign-up stays Clerk's. */}
+        <Route path="/sign-in/*" element={<SignIn />} />
+        {/* Google returns here; Clerk finishes the sign-in (or hands a
+            brand-new Google user over to sign-up) and moves on. */}
         <Route
-          path="/sign-in/*"
+          path="/sso-callback"
           element={
-            <AuthPage>
-              <SignIn
-                routing="path"
-                path="/sign-in"
-                signUpUrl="/sign-up"
-                fallbackRedirectUrl="/dashboard"
-              />
-            </AuthPage>
+            <AuthenticateWithRedirectCallback
+              signInFallbackRedirectUrl="/dashboard"
+              signUpFallbackRedirectUrl="/dashboard"
+            />
           }
         />
         <Route
