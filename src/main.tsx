@@ -24,17 +24,14 @@ const queryClient = new QueryClient({
   },
 })
 
-// Clerk's screens, in this pool's words.
-//
-// The beta's real failure: members who signed up with Google or an
-// emailed code came back, typed a password they never set, and never
-// noticed "Use another method" — it reads as fine print. Clerk shows
-// one method at a time by design and neither its prebuilt component nor
-// Elements can put them all on one screen, so the fix here is wording
-// and weight: say on the FIRST screen that a password may not be
-// theirs, and make every alternative read as a button that says what it
-// does. Verified against the live instance 2026-09-21: email_code and
-// email_link are both enabled first factors, so these screens do exist.
+// Clerk's screens are Clerk's. The only thing this app adds is WORDS,
+// and only where members were getting stuck: people who signed up with
+// Google or an emailed code came back, typed a password they never set,
+// and never noticed "Use another method". No styling and no theming —
+// handing Clerk's elements our classes put white text on Clerk's white
+// card in dark mode (2026-09-24), and a global label meant for sign-in
+// showed up on sign-up. Clerk's own card is legible in both modes on
+// its own; leave it alone.
 const localization = {
   signIn: {
     start: {
@@ -52,29 +49,11 @@ const localization = {
       blockButton__emailLink: 'Email a sign-in link to {{identifier}}',
       blockButton__password: 'Type my password instead',
     },
-    forgotPasswordAlternativeMethods: {
-      label__alternativeMethods: 'Or sign in without a password',
-    },
-  },
-  formFieldLabel__password: 'Password (only if you set one)',
-  formFieldAction__forgotPassword: 'Forgot it? Email me a code',
-}
-
-// Alternatives get the size of a real button, in this app's own styles
-// (mns-ui classes), instead of a link at the bottom of the card.
-// Only the two places that carry the way out: the list of alternatives,
-// and the action beside the password field. Clerk keeps its own styling
-// everywhere else — including the Google button, whose icon-and-label
-// layout is not ours to second-guess.
-const appearance = {
-  elements: {
-    alternativeMethodsBlockButton: 'mns-btn mns-btn--quiet mns-btn--full',
-    formFieldAction: 'mns-btn mns-btn--ghost',
   },
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+function Root() {
+  return (
     <ClerkProvider
       publishableKey={publishableKey}
       signInUrl="/sign-in"
@@ -83,7 +62,6 @@ createRoot(document.getElementById('root')!).render(
       signUpFallbackRedirectUrl="/dashboard"
       afterSignOutUrl="/"
       localization={localization}
-      appearance={appearance}
     >
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
@@ -102,5 +80,11 @@ createRoot(document.getElementById('root')!).render(
         </BrowserRouter>
       </QueryClientProvider>
     </ClerkProvider>
+  )
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <Root />
   </StrictMode>
 )

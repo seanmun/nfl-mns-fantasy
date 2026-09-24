@@ -877,6 +877,10 @@ export function AssistantChat({
     recognizerRef.current = rec
     // Events from a retired recognizer never reach the state.
     const mine = () => recognizerRef.current === rec
+    // Whether this session produced a finished utterance. A phone can end
+    // a session with neither a result nor an error; hands-free must not
+    // sit there switched on with the mic closed when it does.
+    let gotFinal = false
     rec.onresult = (event) => {
       if (!mine()) return
       let text = ''
@@ -889,6 +893,7 @@ export function AssistantChat({
       // One utterance per tap: a final result IS the end, whether or not
       // the phone gets round to firing onend.
       if (!final) return
+      gotFinal = true
       setListening(false)
       if (!handsFreeRef.current) return
       // The pause that ended the utterance is the send signal. A word or
@@ -919,7 +924,20 @@ export function AssistantChat({
     // No start timeout on purpose: the first tap can sit behind the
     // phone's microphone permission prompt for as long as it likes.
     rec.onend = () => {
-      if (mine()) setListening(false)
+      if (!mine()) return
+      setListening(false)
+      if (!handsFreeRef.current || gotFinal) return
+      // Ended with nothing heard. Reopen, counted like noise so a phone
+      // that keeps ending sessions empty stops after a few rather than
+      // chirping forever.
+      noiseRef.current += 1
+      if (noiseRef.current >= 5) {
+        earcon('stop')
+        setHandsFree(false)
+        setMicNote("Couldn't keep the mic open. Tap Hands-free to try again.")
+        return
+      }
+      listenAgain()
     }
     rec.onerror = (event) => {
       if (!mine()) return
