@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { Db } from '../db/types.js'
 import {
   getScoreboard,
@@ -11,7 +11,7 @@ import {
   winnerSide,
   type SeasonTypeKey,
 } from '../../../api/_espn.js'
-import { nflGames, nflTeams, nflWeeks, type SeasonType } from '../db/schema.js'
+import { nflGames, nflTeams, nflWeeks, type GameStatus, type SeasonType } from '../db/schema.js'
 
 // Schedule and score sync. ESPN is the source for both — one scoreboard
 // call per week returns the fixtures, the live state and the finals.
@@ -248,19 +248,109 @@ export async function refreshWeekBounds(db: Db, weekId: string): Promise<void> {
 // still ahead of us, else the most recent. Deliberately not "today's
 // date" arithmetic — bye weeks, flexed games and the postseason make
 // calendar maths wrong often enough to matter.
+//
+// This answers "which week are members acting in". It must NOT decide
+// which weeks get their scores fetched: it rolls forward the moment the
+// last game kicks off, which is hours before that game is final. Score
+// fetching is weeksNeedingSync() below, keyed on game state.
 export async function currentWeek(db: Db, season: number, seasonType: SeasonType = 'regular') {
   const weeks = await db
     .select()
     .from(nflWeeks)
     .where(and(eq(nflWeeks.season, season), eq(nflWeeks.seasonType, seasonType)))
     .orderBy(nflWeeks.week)
+  return pickCurrentWeek(weeks, new Date())
+}
 
-  const now = Date.now()
+// The pure half of currentWeek(), so season.test.ts can replay the real
+// schedule through the exact selection the tick uses. `weeks` must be in
+// week order.
+export function pickCurrentWeek<T extends { lastKickoffAt: Date | null }>(
+  weeks: T[],
+  now: Date
+): T | null {
+  const t = now.getTime()
   return (
-    weeks.find((w) => w.lastKickoffAt && w.lastKickoffAt.getTime() > now) ??
+    weeks.find((w) => w.lastKickoffAt && w.lastKickoffAt.getTime() > t) ??
     weeks[weeks.length - 1] ??
     null
   )
+}
+
+// ─── Which weeks still need a feed call ──────────────────────────────
+
+// Terminal states. A game in either will never change again, so it never
+// needs another fetch.
+export function isSettled(status: GameStatus): boolean {
+  return status === 'final' || status === 'cancelled'
+}
+
+export interface SyncGame {
+  weekId: string
+  status: GameStatus
+  kickoffAt: Date
+}
+
+// Games that have kicked off and are not settled: in play, or played and
+// not yet recorded as final here. This predicate — the game's OWN state,
+// never the calendar — is what decides which weeks the tick re-fetches.
+//
+// Why it is phrased this way: currentWeek() rolls to the next week the
+// moment a week's last game kicks off. Through Weeks 1 and 2 of 2026 the
+// tick fetched only that "current" week, so the Monday night game — the
+// last kickoff, with no later game holding its week open — was fetched
+// for the last time at the tick BEFORE it started and sat at scheduled
+// 0-0 for good. Ten picks on two games stayed 'pending' and every total
+// that included one was short. Any rule of the form "which week is it"
+// has that hole; "which games are undecided" does not.
+export function unsettledKickedOff<T extends SyncGame>(games: T[], now: Date): T[] {
+  const t = now.getTime()
+  return games.filter((g) => g.kickoffAt.getTime() <= t && !isSettled(g.status))
+}
+
+export interface SyncBacklog {
+  // Every week holding an unsettled game that has kicked off, in week
+  // order. Usually empty; one week from Monday night until its final
+  // lands; more only when something upstream has gone wrong.
+  weeks: Array<typeof nflWeeks.$inferSelect>
+  // The games behind that list, for the tick's stale-game report.
+  games: Array<SyncGame & { label: string; homeTeamId: string; awayTeamId: string }>
+}
+
+// 'test' weeks are excluded: their games are copies under `test-` feed
+// ids, synced by syncTestWeeks, and there is no scoreboard season-type
+// code for them.
+const FEED_SEASON_TYPES: SeasonType[] = ['pre', 'regular', 'post']
+
+export async function weeksNeedingSync(db: Db, season: number, now: Date): Promise<SyncBacklog> {
+  const rows = await db
+    .select({
+      week: nflWeeks,
+      weekId: nflGames.weekId,
+      status: nflGames.status,
+      kickoffAt: nflGames.kickoffAt,
+      homeTeamId: nflGames.homeTeamId,
+      awayTeamId: nflGames.awayTeamId,
+    })
+    .from(nflGames)
+    .innerJoin(nflWeeks, eq(nflWeeks.id, nflGames.weekId))
+    .where(and(eq(nflWeeks.season, season), inArray(nflWeeks.seasonType, FEED_SEASON_TYPES)))
+
+  const open = unsettledKickedOff(rows, now)
+  const byId = new Map<string, typeof nflWeeks.$inferSelect>()
+  for (const r of open) byId.set(r.week.id, r.week)
+
+  return {
+    weeks: [...byId.values()].sort((a, b) => a.week - b.week),
+    games: open.map((r) => ({
+      weekId: r.weekId,
+      status: r.status,
+      kickoffAt: r.kickoffAt,
+      label: r.week.label,
+      homeTeamId: r.homeTeamId,
+      awayTeamId: r.awayTeamId,
+    })),
+  }
 }
 
 export { SEASON_TYPE_CODE }

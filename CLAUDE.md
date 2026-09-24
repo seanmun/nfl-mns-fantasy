@@ -266,10 +266,50 @@ everyone who did.
 credits: one request, three of them. Writes reference lines into
 `game_lines` and publishes nothing.
 
-`/api/cron/tick` — hourly. One ESPN call, then everything that follows:
-refresh scores and kickoffs, run any due auto-fills, grade active pools.
-Deadlines are processed **before** grading so a member filled in this
-hour is graded in the same pass instead of waiting another hour.
+`/api/cron/tick` — hourly. One ESPN scoreboard call **per week that
+still needs one**, then everything that follows: run any due auto-fills,
+grade every published pool-week, send results emails, archive finished
+pools. Deadlines are processed **before** grading so a member filled in
+this hour is graded in the same pass instead of waiting another hour.
+
+**Which weeks get fetched is decided by game state, never by the
+calendar.** `weeksNeedingSync()` returns every week holding a game that
+has kicked off and is not yet `final` or `cancelled`; the tick fetches
+those plus the current week (for kickoff moves). `currentWeek()` answers
+a different question — "which week are members acting in" — and rolls
+to the next week the moment a week's last game kicks off, hours before
+that game is final. Through Weeks 1–2 of 2026 the tick fetched only
+`currentWeek()`, so each Monday night game (the last kickoff, with no
+later game holding its week open) was fetched for the last time at the
+tick before it started and stayed `scheduled` 0-0 forever. The grader
+skips non-final games silently, so ten picks across the live pool sat
+`pending`, five season totals were a point short, and the week-results
+email — which waits for every game to be decided — never went out for
+either week. Nothing raised an alarm for ten days.
+
+Three things now hold that shut: `unsettledKickedOff()` is the pure
+rule with the Monday-night case pinned in `schedule.test.ts`; each week
+is fetched in its own try/catch so one bad response cannot stop grading;
+and the tick reports `staleGames` — anything undecided six hours after
+kickoff — in its JSON and as a `console.error`, so a repeat of any kind
+shows on the next tick's output rather than on the standings a week
+later. Never reintroduce a "current week" filter on the sync path.
+`season.test.ts` replays the real 2026 schedule (272 games, fixture in
+`src/lib/sync/fixtures/`) through the tick's exact selection, hour by
+hour, and asserts nothing is lost — including with a 72-hour tick
+outage and a postponed game. It shows the old rule losing 17 games, one
+Monday night per week. Any change to how the tick chooses weeks must
+keep it green; when the 2027 schedule is seeded, export it into the
+fixture the same way.
+
+**The results email has a window, and it is short.** `resultsWindow()`
+(`src/lib/email/resultsWindow.ts`, tested) allows the weekly results
+email only on the Eastern morning after the last kickoff, or the day
+after that. Later than that the week is expired: stamped, reported as
+`resultsExpired`, never sent. Without this, catching up the two stuck
+weeks would have mailed "Week 1 results" to everyone during Week 3. No
+backlog, outage or regrade may ever produce a late results email. Full
+account: `POSTMORTEM-2026-09-24-monday-night-scores.md`.
 
 Tick precision does not matter, because **the deadline is enforced on
 write**. A late tick can never let someone sneak a pick in; it only

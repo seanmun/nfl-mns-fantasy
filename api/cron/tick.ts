@@ -3,15 +3,29 @@ import { and, eq, isNotNull } from 'drizzle-orm'
 import { db } from '../_db.js'
 import { verifyCron } from '../_middleware.js'
 import { nflGames, nflPoolGames, nflPools, nflPoolWeeks, nflWeeks } from '../../src/lib/db/schema.js'
-import { currentWeek, syncTestWeeks, syncWeek } from '../../src/lib/sync/schedule.js'
+import {
+  currentWeek,
+  syncTestWeeks,
+  syncWeek,
+  weeksNeedingSync,
+  type SyncWeekResult,
+} from '../../src/lib/sync/schedule.js'
 import { autofillPoolWeek, duePoolWeeks } from '../../src/lib/scoring/autofill.js'
 import { gradePoolWeek } from '../../src/lib/scoring/rollup.js'
 import { dueForReminder, sendReminders } from '../../src/lib/email/reminders.js'
-import { dueForResults, sendResultsEmails } from '../../src/lib/email/results.js'
+import { dueForResults, markResultsSkipped, sendResultsEmails } from '../../src/lib/email/results.js'
 import type { SeasonTypeKey } from '../_espn.js'
 
-// The hourly heartbeat. One ESPN call, then everything that follows from
-// what it returned.
+// The hourly heartbeat. One scoreboard call per week that still needs
+// one, then everything that follows from what came back.
+//
+// Which weeks need one is decided by GAME STATE, never by the calendar:
+// every week holding a game that has kicked off and is not yet final or
+// cancelled, plus the current week so kickoff moves are seen. Through
+// Weeks 1-2 of 2026 this fetched only currentWeek(), which rolls forward
+// the moment a week's last game kicks off — so the Monday night game was
+// last fetched before it started, never reached 'final', and every pick
+// on it stayed 'pending'. See POSTMORTEM-2026-09-24-monday-night-scores.md.
 //
 // Order matters. Deadlines are processed BEFORE grading so that a member
 // who was auto-filled this hour is graded in the same pass rather than
@@ -33,14 +47,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, note: 'No weeks seeded yet', season })
     }
 
-    // Refreshes scores AND kickoff times — flexed games move deadlines,
-    // so this is not only a scoring concern.
-    const sync = await syncWeek(db, season, week.seasonType as SeasonTypeKey, week.week)
+    const now = new Date()
+
+    // Every week with an undecided game that has kicked off, plus the
+    // current week (kickoff times move — flexed games move deadlines).
+    // Normally one call; two from Monday night until that final lands.
+    // Each week is fetched on its own so one bad response cannot stop
+    // the others, or the grading below, from running this hour.
+    const backlog = await weeksNeedingSync(db, season, now)
+    const targets = new Map(backlog.weeks.map((w) => [w.id, w]))
+    targets.set(week.id, week)
+
+    const synced: Array<SyncWeekResult & { week: string }> = []
+    const syncFailures: Array<{ week: string; error: string }> = []
+    for (const w of targets.values()) {
+      try {
+        const r = await syncWeek(db, season, w.seasonType as SeasonTypeKey, w.week)
+        synced.push({ week: w.label, ...r })
+      } catch (err) {
+        syncFailures.push({ week: w.label, error: String(err) })
+      }
+    }
+
+    // What is STILL undecided after this pass. A game not settled six
+    // hours after kickoff has outlived any NFL game plus a weather delay,
+    // and the grader skips undecided games without comment — that
+    // silence is how the Monday night gap went unseen for ten days.
+    const STALE_MS = 6 * 60 * 60 * 1000
+    const remaining = await weeksNeedingSync(db, season, now)
+    const staleGames = remaining.games
+      .filter((g) => now.getTime() - g.kickoffAt.getTime() > STALE_MS)
+      .map((g) => `${g.label} ${g.awayTeamId}@${g.homeTeamId} ${g.status} kickoff ${g.kickoffAt.toISOString()}`)
 
     // QA weeks ride the same heartbeat. Free when none are pending.
     const testSynced = await syncTestWeeks(db, season)
-
-    const now = new Date()
 
     // Nudge first. A member who acts on the email still has until the
     // deadline, so reminders must go out on ticks BEFORE the fill runs —
@@ -81,12 +121,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ── Week results email ──────────────────────────────────────
     // After grading, so a week decided this hour goes out with its
-    // final numbers. dueForResults enforces morning-after Eastern and
-    // the results_email_sent_at stamp makes it once-per-week.
-    const resultsDue = await dueForResults(db, now)
+    // final numbers. dueForResults enforces the morning-after window in
+    // Eastern time and the results_email_sent_at stamp makes it
+    // once-per-week. A week whose window has passed — decided late for
+    // any reason, like the two weeks the 2026-09-24 sync fix caught up
+    // on — is stamped and NEVER mailed. No late results email, ever.
+    const results = await dueForResults(db, now)
     const resultsSent = []
-    for (const r of resultsDue) {
+    for (const r of results.due) {
       resultsSent.push(await sendResultsEmails(db, r.poolWeek.id, appUrl))
+    }
+    const resultsExpired: string[] = []
+    for (const e of results.expired) {
+      await markResultsSkipped(db, e.poolWeek.id)
+      resultsExpired.push(`${e.pool.name} ${e.week}`)
     }
 
     // ── Archive finished pools ──────────────────────────────────
@@ -152,18 +200,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (emailFailures.length) console.error('tick: reminder sends failed', emailFailures)
     if (problems.length) console.error('tick: ungraded picks', problems)
     if (shortfalls.length) console.error('tick: autofill shortfalls', shortfalls)
-    if (sync.unknownTeams.length) console.error('tick: unknown teams', sync.unknownTeams)
-    if (sync.kickoffsChanged.length) console.warn('tick: kickoffs moved', sync.kickoffsChanged)
+    const unknownTeams = synced.flatMap((s) => s.unknownTeams)
+    const kickoffsChanged = synced.flatMap((s) => s.kickoffsChanged)
+    if (syncFailures.length) console.error('tick: week sync failed', syncFailures)
+    if (staleGames.length) console.error('tick: games undecided long after kickoff', staleGames)
+    if (resultsExpired.length) console.warn('tick: results emails skipped, window passed', resultsExpired)
+    if (unknownTeams.length) console.error('tick: unknown teams', unknownTeams)
+    if (kickoffsChanged.length) console.warn('tick: kickoffs moved', kickoffsChanged)
 
     return res.status(200).json({
       ok: true,
       season,
       week: week.label,
-      sync,
+      synced,
+      syncFailures,
+      staleGames,
       testSynced,
       remindersSent: reminded.reduce((n, r) => n + r.sent, 0),
       resultsEmailsSent: resultsSent.reduce((n, r) => n + r.sent, 0),
       resultsEmailFailures: resultsSent.flatMap((r) => r.failed),
+      resultsExpired,
       emailFailures,
       autofilled: filled.length,
       picksAssigned: filled.reduce((n, f) => n + f.picksAssigned, 0),

@@ -13,6 +13,7 @@ import {
   users,
 } from '../db/schema.js'
 import { esc, sendAll, type Message } from '../../../api/_email.js'
+import { resultsWindow } from './resultsWindow.js'
 import {
   emailCard,
   emailColors,
@@ -30,24 +31,22 @@ export interface ResultsEmailResult {
 }
 
 // "The morning after": the week's results go out on the first tick at or
-// past 8am Eastern on a LATER Eastern calendar day than the last
-// included kickoff. Sent once per pool-week (results_email_sent_at).
-const ET_DAY = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/New_York',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
-const ET_HOUR = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York',
-  hour: 'numeric',
-  hour12: false,
-})
+// past 8am Eastern on the day after the last included kickoff, with one
+// day of grace. Later than that the week is EXPIRED: stamped as done and
+// never mailed. The window itself is resultsWindow(), pure and tested.
+
+export interface ResultsCandidates {
+  due: Array<{ poolWeek: typeof nflPoolWeeks.$inferSelect; pool: typeof nflPools.$inferSelect }>
+  // Decided too late to mail. The caller stamps these (markResultsSkipped)
+  // so they are never looked at again, and logs them so the miss is seen.
+  expired: Array<{ poolWeek: typeof nflPoolWeeks.$inferSelect; pool: typeof nflPools.$inferSelect; week: string }>
+}
 
 // Pool-weeks whose results email should go out now: published, not yet
 // sent, every included game decided, at least one pick graded, and the
-// Eastern clock says it is morning-after.
-export async function dueForResults(db: Db, now: Date) {
+// Eastern clock says it is morning-after — or, separately, weeks whose
+// morning-after has already passed and must be skipped. Read-only.
+export async function dueForResults(db: Db, now: Date): Promise<ResultsCandidates> {
   const candidates = await db
     .select({ poolWeek: nflPoolWeeks, pool: nflPools })
     .from(nflPoolWeeks)
@@ -59,12 +58,9 @@ export async function dueForResults(db: Db, now: Date) {
         inArray(nflPools.status, ['open', 'completed'])
       )
     )
-  if (candidates.length === 0) return []
+  const out: ResultsCandidates = { due: [], expired: [] }
+  if (candidates.length === 0) return out
 
-  if (Number(ET_HOUR.format(now)) < 8) return []
-  const today = ET_DAY.format(now)
-
-  const due: typeof candidates = []
   for (const c of candidates) {
     const slate = await db
       .select({
@@ -84,7 +80,13 @@ export async function dueForResults(db: Db, now: Date) {
     const decided = slate.every((g) => g.status === 'final' || g.status === 'cancelled')
     if (!decided) continue
     const lastKick = new Date(Math.max(...slate.map((g) => g.kickoffAt.getTime())))
-    if (ET_DAY.format(lastKick) >= today) continue
+    const window = resultsWindow(lastKick, now)
+    if (window === 'wait') continue
+    if (window === 'expired') {
+      const [wk] = await db.select({ label: nflWeeks.label }).from(nflWeeks).where(eq(nflWeeks.id, c.poolWeek.weekId)).limit(1)
+      out.expired.push({ ...c, week: wk?.label ?? c.poolWeek.weekId })
+      continue
+    }
 
     // Grading actually ran — an ungraded week reads as everyone on zero.
     const [graded] = await db
@@ -94,9 +96,15 @@ export async function dueForResults(db: Db, now: Date) {
       .limit(1)
     if (!graded) continue
 
-    due.push(c)
+    out.due.push(c)
   }
-  return due
+  return out
+}
+
+// A week decided too late to mail. Stamped like a sent one so the tick
+// never reconsiders it; the stamp is the only write and sends nothing.
+export async function markResultsSkipped(db: Db, poolWeekId: string): Promise<void> {
+  await stamp(db, poolWeekId)
 }
 
 const RESULT_WORD: Record<string, { word: string; color: string }> = {
