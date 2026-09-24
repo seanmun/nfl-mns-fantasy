@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
-import { createApi, type ApiOtherPick, type StandingsRow } from '@/lib/api/client'
+import { createApi, type ApiOtherPick, type StandingsRow, type ApiSlateGame } from '@/lib/api/client'
 import { teamSpread } from '@/lib/utils'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
 import { ChevronDown, ChevronLeft, ChevronRight, Star, Trophy } from 'lucide-react'
@@ -29,9 +29,18 @@ function rankBy(
 }
 
 // One entry's picks for the week on screen: team, the number it took,
-// and a star on the key pick. Nothing else — the row above already
-// carries the score. Only picks the server revealed are here, so a live
-// week fills in game by game.
+// the game's score, and the graded result — so anyone can check the
+// grading themselves against the number and the final. Win, loss and
+// push are carried by a word AND a colour, never colour alone. The
+// result is the server's (picks.result), not recomputed here. Only
+// picks the server revealed are here, so a live week fills in game by
+// game.
+const RESULT_TONE: Record<string, { word: string; color: string }> = {
+  win: { word: 'WON', color: 'var(--color-pick-win)' },
+  loss: { word: 'LOST', color: 'var(--color-pick-loss)' },
+  push: { word: 'PUSH', color: 'var(--color-muted-foreground)' },
+  missed: { word: 'MISSED', color: 'var(--color-muted-foreground)' },
+}
 function WeekPicks({
   entryId,
   picks,
@@ -42,7 +51,7 @@ function WeekPicks({
 }: {
   entryId: string
   picks: ApiOtherPick[]
-  slate: Array<{ gameId: string; kickoffAt: string; home: { id: string; nickname: string } | null; away: { id: string; nickname: string } | null; spread: number | null }>
+  slate: ApiSlateGame[]
   spreadMode: 'straight_up' | 'ats'
   loading: boolean
   failed: boolean
@@ -74,12 +83,21 @@ function WeekPicks({
         const game = gameById.get(p.gameId)
         const isHome = p.selectedTeamId === game?.home?.id
         const team = isHome ? game?.home : game?.away
+        const opp = isHome ? game?.away : game?.home
         const line =
           spreadMode === 'ats'
             ? teamSpread(p.lineSpreadAtPick ?? game?.spread ?? null, isHome ? 'home' : 'away')
             : null
+        const played = game?.status === 'in_progress' || game?.status === 'final'
+        const myScore = isHome ? game?.homeScore : game?.awayScore
+        const oppScore = isHome ? game?.awayScore : game?.homeScore
+        const tone = RESULT_TONE[p.result]
         return (
-          <li key={p.gameId} className="flex items-center gap-1.5 text-[0.95rem]">
+          <li
+            key={p.gameId}
+            className="flex flex-wrap items-center gap-x-1.5 text-[0.95rem] tabular-nums"
+            style={tone ? { color: tone.color } : undefined}
+          >
             {p.isKeyPick ? (
               <Star
                 size={14}
@@ -89,11 +107,14 @@ function WeekPicks({
               />
             ) : null}
             <b>{team?.nickname ?? p.selectedTeamId}</b>
-            {line ? (
-              <span className="font-mono text-[0.9rem] text-[var(--color-muted-foreground)]">
-                {line}
+            {line ? <span className="font-mono text-[0.9rem]">{line}</span> : null}
+            {played ? (
+              <span className="text-[0.9rem]">
+                {myScore ?? 0}–{oppScore ?? 0} vs {opp?.nickname ?? ''}
+                {game?.status === 'final' ? '' : ' · Live'}
               </span>
             ) : null}
+            {tone ? <b className="text-[0.85rem] tracking-wide">{tone.word}</b> : null}
           </li>
         )
       })}
