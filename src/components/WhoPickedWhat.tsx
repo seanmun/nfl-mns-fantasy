@@ -269,13 +269,15 @@ const GameCard = forwardRef<
         </span>
       </div>
 
-      <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-1.5 px-3.5 pt-2 pb-2.5 tabular-nums">
+      <div // Two equal halves no matter how long a name is: minmax(0,1fr) stops a
+      // "Buccaneers" from widening its side, and the name truncates instead.
+      className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-1.5 px-3.5 pt-2 pb-2.5 tabular-nums">
         <TeamSide team={left} line={lineOf(leftIsHome)} score={scored ? scoreOf(leftIsHome) : null} live={game.status === 'in_progress'} word={word(leftRes)} res={leftRes} align="left" />
         <span className="pb-3 font-mono text-[0.78rem] text-[var(--color-muted-foreground)]">{leftIsHome ? 'vs' : 'at'}</span>
         <TeamSide team={right} line={lineOf(!leftIsHome)} score={scored ? scoreOf(!leftIsHome) : null} live={game.status === 'in_progress'} word={word(rightRes)} res={rightRes} align="right" />
       </div>
 
-      <div className="grid grid-cols-2 border-t border-[var(--color-border)]">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] border-t border-[var(--color-border)]">
         <Column
           picks={leftPicks}
           share={total_ ? leftPicks.length / total_ : 0}
@@ -324,7 +326,7 @@ function TeamSide({
   const end = align === 'right'
   return (
     <div className={'min-w-0 flex flex-col gap-0.5 ' + (end ? 'items-end text-right' : '')}>
-      <span className="font-display text-[2rem] leading-[0.95] tracking-wide truncate max-w-full">{team?.nickname ?? '?'}</span>
+      <span className="font-display text-[2rem] leading-[0.95] tracking-wide truncate w-full" title={team?.nickname}>{team?.nickname ?? '?'}</span>
       {line ? <span className="font-mono text-[0.9rem] text-[var(--color-muted-foreground)]">{line}</span> : null}
       <span className={'font-display text-[3rem] leading-none ' + (live ? 'text-[var(--color-muted-foreground)]' : '')}>
         {score ?? '–'}
