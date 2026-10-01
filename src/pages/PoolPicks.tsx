@@ -11,10 +11,8 @@ import {
 } from '@/lib/api/client'
 import {
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Lock,
   Star,
 } from 'lucide-react'
@@ -22,6 +20,7 @@ import { useAutoSave } from '@/hooks/useAutoSave'
 import { kickoffLabel, dayLabel, pickStanding, teamSpread, TONE_COLOR } from '@/lib/utils'
 import { Markdown } from '@/components/Markdown'
 import { PoolTabBar } from '@/components/layout/PoolTabBar'
+import { WhoPickedWhat } from '@/components/WhoPickedWhat'
 
 export function PoolPicks() {
   const { id: poolId = '' } = useParams()
@@ -293,7 +292,19 @@ export function PoolPicks() {
         />
       ) : null}
 
-      {(!data.revealed || tab === 'games') && data.slate.map((game) => {
+      {data.revealed && tab === 'games' ? (
+        // Locked week, Games view: one card per game, everyone's pick
+        // on each side of it. Replaces the per-card "Who picked" fold.
+        <WhoPickedWhat
+          slate={data.slate}
+          others={data.others}
+          myPicks={data.myPicks}
+          myEntries={data.entries}
+          spreadMode={data.pool.spreadMode}
+        />
+      ) : null}
+
+      {!data.revealed && data.slate.map((game) => {
         const day = dayLabel(game.kickoffAt)
         const showDay = day !== lastDay
         lastDay = day
@@ -323,6 +334,19 @@ export function PoolPicks() {
           </div>
         )
       })}
+
+      {!data.revealed && data.slate.some((g) => g.picksRevealed) ? (
+        // Picks still open for the week, but an early game (Thursday,
+        // Saturday) has kicked off: its picks are public now, so the
+        // same cards appear under the slate, locked for the rest.
+        <WhoPickedWhat
+          slate={data.slate}
+          others={data.others}
+          myPicks={data.myPicks}
+          myEntries={data.entries}
+          spreadMode={data.pool.spreadMode}
+        />
+      ) : null}
 
       {/* The tick refreshes scores on this cadence; saying so stops
           "why is my score stale" messages to the manager. */}
@@ -560,73 +584,7 @@ function GameCard({
         </div>
       ) : null}
 
-      {pickers && pickers.length ? <WhoPicked pickers={pickers} teams={[left, right]} /> : null}
     </article>
-  )
-}
-
-// Who took each side, once this game's picks are public — a Thursday
-// game from its own kickoff, everything from the deadline. Folded behind
-// a tap so a long list never pushes the slate down the page.
-function WhoPicked({
-  pickers,
-  teams,
-}: {
-  pickers: ApiOtherPick[]
-  teams: Array<ApiSlateGame['home']>
-}) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="border-t border-[var(--color-border)]">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="w-full min-h-[var(--tap-target-min)] px-3 flex items-center justify-between font-bold text-[0.9rem] text-[var(--color-muted-foreground)]"
-      >
-        Who picked
-        {open ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
-      </button>
-      {open ? (
-        <div className="px-3 pb-3 flex flex-col gap-2">
-          {teams.map((team) => {
-            if (!team) return null
-            const names = pickers
-              .filter((p) => p.selectedTeamId === team.id)
-              .sort((a, b) => a.entryName.localeCompare(b.entryName))
-            return (
-              <p key={team.id} className="text-[0.9rem] leading-relaxed">
-                <b>{team.nickname}:</b>{' '}
-                {names.length ? (
-                  names.map((p, i) => (
-                    <span key={p.entryId}>
-                      {i > 0 ? ' · ' : ''}
-                      {p.entryName}
-                      {p.isKeyPick ? (
-                        <span className="text-[var(--color-key)]">
-                          {' '}
-                          <Star
-                            size={14}
-                            fill="currentColor"
-                            aria-hidden="true"
-                            className="inline-block align-[-0.1em]"
-                          />
-                          <span className="sr-only"> key pick</span>
-                        </span>
-                      ) : null}
-                      {p.isAuto ? (
-                        <span className="text-[var(--color-muted-foreground)]"> (auto)</span>
-                      ) : null}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-[var(--color-muted-foreground)]">nobody</span>
-                )}
-              </p>
-            )
-          })}
-        </div>
-      ) : null}
-    </div>
   )
 }
 
