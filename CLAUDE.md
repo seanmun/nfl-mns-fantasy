@@ -281,9 +281,10 @@ in" — and **a week never ends on Monday**: it ends at 6am Eastern the
 morning after its last kickoff (`pickActiveWeek`, tested). On Oct 5 it
 still used the kickoff rule and members saw an empty Week 5 at 10:46pm
 with the Monday game on. The crons keep the kickoff rule because the
-Tuesday lines pull runs at 10:00Z, 5am ET after DST ends. The old
-version of that rule Through Weeks 1–2 of 2026 the tick fetched only
-`currentWeek()`, so each Monday night game (the last kickoff, with no
+Tuesday lines pull runs at 10:00Z, 5am ET after DST ends.
+
+Through Weeks 1–2 of 2026 the kickoff-rule week was the only one the
+tick fetched, so each Monday night game (the last kickoff, with no
 later game holding its week open) was fetched for the last time at the
 tick before it started and stayed `scheduled` 0-0 forever. The grader
 skips non-final games silently, so ten picks across the live pool sat
