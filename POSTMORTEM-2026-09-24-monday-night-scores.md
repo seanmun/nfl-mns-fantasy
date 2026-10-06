@@ -329,3 +329,34 @@ where pk.result = 'pending' and g.kickoff_at < now();
 - **Subtraction:** one pure function and one loop replace one line. The
   extra pieces are the test and the alarm, which are the parts that
   make "never again" a claim rather than a hope.
+
+## Addendum, 2026-10-05: the same rule, on the read side
+
+At 10:46pm ET on Monday Oct 5, with ATL@NO in the third quarter, the app
+showed members an empty Week 5 and "0 of 17 picks". Home and the Picks
+tab had both moved on; Week 4's picks and the live score were gone.
+
+The member-facing endpoints (`picks`, `week`, `admin`) chose "the week
+we are in" with `currentWeek()`, the same first-week-whose-last-kickoff-
+is-ahead rule the tick used to fetch scores. The Sept 24 fix replaced
+that rule for scoring and explicitly left it in place for the UI, with
+the claim that it was right there. It was not: it rolls at 8:15pm on
+Monday, and Week 5 is not published until Tuesday, so the hours of the
+Monday night game were a dead state for every member.
+
+Rule now, Sean's: **a week never ends on Monday. It ends at 6am Eastern
+on the morning after its last kickoff.** `pickActiveWeek()` implements
+it (DST-safe, tested on both sides of Nov 1, and at 10:46pm Monday,
+5:59am Tuesday and 6:00am Tuesday). The two crons use `upcomingWeek()`,
+the old kickoff rule under its honest name, because the Tuesday lines
+pull runs at 10:00Z — 5am Eastern once DST ends — and must fetch next
+week's lines, not last week's.
+
+Deployed 02:50Z Oct 6, confirmed live via the commit's Vercel
+deployment status; Sean confirmed the app showed Week 4 again.
+
+There are no other readers of the kickoff rule: `grep` over `api/` and
+`src/` for `currentWeek`, `upcomingWeek`, `pickWeekByKickoff` and
+`lastKickoffAt` finds only the three member endpoints (now 6am rule),
+the two crons (scheduling rule), and the tick's archive check, which
+asks a different question (is the whole range in the past).

@@ -275,10 +275,14 @@ this hour is graded in the same pass instead of waiting another hour.
 **Which weeks get fetched is decided by game state, never by the
 calendar.** `weeksNeedingSync()` returns every week holding a game that
 has kicked off and is not yet `final` or `cancelled`; the tick fetches
-those plus the current week (for kickoff moves). `currentWeek()` answers
-a different question — "which week are members acting in" — and rolls
-to the next week the moment a week's last game kicks off, hours before
-that game is final. Through Weeks 1–2 of 2026 the tick fetched only
+those plus the next week to schedule (`upcomingWeek()`, for kickoff
+moves). `currentWeek()` is a third question — "which week are members
+in" — and **a week never ends on Monday**: it ends at 6am Eastern the
+morning after its last kickoff (`pickActiveWeek`, tested). On Oct 5 it
+still used the kickoff rule and members saw an empty Week 5 at 10:46pm
+with the Monday game on. The crons keep the kickoff rule because the
+Tuesday lines pull runs at 10:00Z, 5am ET after DST ends. The old
+version of that rule Through Weeks 1–2 of 2026 the tick fetched only
 `currentWeek()`, so each Monday night game (the last kickoff, with no
 later game holding its week open) was fetched for the last time at the
 tick before it started and stayed `scheduled` 0-0 forever. The grader
