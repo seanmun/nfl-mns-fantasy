@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GameStatus } from '../db/schema.js'
-import { pickCurrentWeek, unsettledKickedOff } from './schedule.js'
+import { pickWeekByKickoff, unsettledKickedOff } from './schedule.js'
 import { SCHEDULE_2026 } from './fixtures/schedule2026.js'
 
 // Replays the real 2026 season through the tick's week selection, one
@@ -93,7 +93,7 @@ function simulate(rule: Rule, feed: Feed, skipTick?: (now: Date) => boolean): st
     if (skipTick?.(now)) continue
 
     const targets = new Set<string>()
-    const current = pickCurrentWeek(weeks, now)
+    const current = pickWeekByKickoff(weeks, now)
     if (current) targets.add(current.id)
     if (rule === 'game-state') {
       for (const g of unsettledKickedOff(rows, now)) targets.add(g.weekId)

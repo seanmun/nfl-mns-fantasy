@@ -4,7 +4,7 @@ import { db } from '../_db.js'
 import { verifyCron } from '../_middleware.js'
 import { nflGames, nflPoolGames, nflPools, nflPoolWeeks, nflWeeks } from '../../src/lib/db/schema.js'
 import {
-  currentWeek,
+  upcomingWeek,
   syncTestWeeks,
   syncWeek,
   weeksNeedingSync,
@@ -22,7 +22,7 @@ import type { SeasonTypeKey } from '../_espn.js'
 // Which weeks need one is decided by GAME STATE, never by the calendar:
 // every week holding a game that has kicked off and is not yet final or
 // cancelled, plus the current week so kickoff moves are seen. Through
-// Weeks 1-2 of 2026 this fetched only currentWeek(), which rolls forward
+// Weeks 1-2 of 2026 this fetched only the kickoff-rule week, which rolls forward
 // the moment a week's last game kicks off — so the Monday night game was
 // last fetched before it started, never reached 'final', and every pick
 // on it stayed 'pending'. See POSTMORTEM-2026-09-24-monday-night-scores.md.
@@ -42,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const started = Date.now()
 
   try {
-    const week = await currentWeek(db, season)
+    const week = await upcomingWeek(db, season)
     if (!week) {
       return res.status(200).json({ ok: true, note: 'No weeks seeded yet', season })
     }
@@ -50,7 +50,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const now = new Date()
 
     // Every week with an undecided game that has kicked off, plus the
-    // current week (kickoff times move — flexed games move deadlines).
+    // next week to schedule (kickoff times move — flexed games move
+    // deadlines). upcomingWeek, not currentWeek: members' week lasts
+    // until Tuesday 6am ET, the schedule's does not need to.
     // Normally one call; two from Monday night until that final lands.
     // Each week is fetched on its own so one bad response cannot stop
     // the others, or the grading below, from running this hour.

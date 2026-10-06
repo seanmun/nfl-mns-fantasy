@@ -244,28 +244,66 @@ export async function refreshWeekBounds(db: Db, weekId: string): Promise<void> {
     .where(eq(nflWeeks.id, weekId))
 }
 
-// The week the app should be operating on: the one whose last kickoff is
-// still ahead of us, else the most recent. Deliberately not "today's
-// date" arithmetic — bye weeks, flexed games and the postseason make
-// calendar maths wrong often enough to matter.
+// ─── Which week is it ────────────────────────────────────────────────
 //
-// This answers "which week are members acting in". It must NOT decide
-// which weeks get their scores fetched: it rolls forward the moment the
-// last game kicks off, which is hours before that game is final. Score
-// fetching is weeksNeedingSync() below, keyed on game state.
-export async function currentWeek(db: Db, season: number, seasonType: SeasonType = 'regular') {
-  const weeks = await db
-    .select()
-    .from(nflWeeks)
-    .where(and(eq(nflWeeks.season, season), eq(nflWeeks.seasonType, seasonType)))
-    .orderBy(nflWeeks.week)
-  return pickCurrentWeek(weeks, new Date())
+// Two different questions, two different answers. Confusing them is
+// what put a half-played Monday night game in "last week" on
+// 2026-10-05 (members saw an empty Week 5 at 10:46pm ET with the
+// Falcons game still on) and what dropped Monday night scores on
+// 2026-09-24.
+//
+//   currentWeek()  — the week MEMBERS are in. A week ends at 6am
+//                    Eastern on the morning after its last kickoff,
+//                    never earlier. Monday night is still that week.
+//                    Used by every member- and admin-facing endpoint.
+//   upcomingWeek() — the next week to SCHEDULE: the one whose last
+//                    kickoff is still ahead. Used by the crons only,
+//                    so the Tuesday lines pull (10:00Z, which is 5am
+//                    Eastern once DST ends) never re-pulls last week.
+//
+// Neither decides what gets scored: that is weeksNeedingSync().
+
+const ET_DATE = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+const ET_HOUR = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hour: 'numeric',
+  hour12: false,
+})
+const WEEK_ENDS_HOUR_ET = 6
+
+// 6am Eastern on the Eastern calendar day after `lastKickoff`. Correct on
+// both sides of the DST change: it guesses the EDT instant and shifts an
+// hour if the Eastern clock disagrees.
+export function weekEndsAt(lastKickoff: Date): Date {
+  const [y, m, d] = ET_DATE.format(lastKickoff).split('-').map(Number)
+  const guess = new Date(Date.UTC(y, m - 1, d + 1, WEEK_ENDS_HOUR_ET + 4, 0, 0))
+  const hour = Number(ET_HOUR.format(guess)) % 24
+  return new Date(guess.getTime() + (WEEK_ENDS_HOUR_ET - hour) * 3_600_000)
 }
 
-// The pure half of currentWeek(), so season.test.ts can replay the real
-// schedule through the exact selection the tick uses. `weeks` must be in
-// week order.
-export function pickCurrentWeek<T extends { lastKickoffAt: Date | null }>(
+// Members' week: the first week that has not ended, else the last.
+// `weeks` must be in week order.
+export function pickActiveWeek<T extends { lastKickoffAt: Date | null }>(
+  weeks: T[],
+  now: Date
+): T | null {
+  const t = now.getTime()
+  return (
+    weeks.find((w) => w.lastKickoffAt && weekEndsAt(w.lastKickoffAt).getTime() > t) ??
+    weeks[weeks.length - 1] ??
+    null
+  )
+}
+
+// The crons' week: the first whose last kickoff is still ahead, else the
+// last. This is the rule that rolled members into an empty next week at
+// Monday night kickoff; it is right ONLY for "what do we schedule next".
+export function pickWeekByKickoff<T extends { lastKickoffAt: Date | null }>(
   weeks: T[],
   now: Date
 ): T | null {
@@ -275,6 +313,22 @@ export function pickCurrentWeek<T extends { lastKickoffAt: Date | null }>(
     weeks[weeks.length - 1] ??
     null
   )
+}
+
+async function seasonWeeks(db: Db, season: number, seasonType: SeasonType) {
+  return db
+    .select()
+    .from(nflWeeks)
+    .where(and(eq(nflWeeks.season, season), eq(nflWeeks.seasonType, seasonType)))
+    .orderBy(nflWeeks.week)
+}
+
+export async function currentWeek(db: Db, season: number, seasonType: SeasonType = 'regular') {
+  return pickActiveWeek(await seasonWeeks(db, season, seasonType), new Date())
+}
+
+export async function upcomingWeek(db: Db, season: number, seasonType: SeasonType = 'regular') {
+  return pickWeekByKickoff(await seasonWeeks(db, season, seasonType), new Date())
 }
 
 // ─── Which weeks still need a feed call ──────────────────────────────

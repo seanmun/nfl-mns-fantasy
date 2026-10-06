@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
 import { verifyCron } from '../_middleware.js'
-import { currentWeek, syncCalendar, syncWeek } from '../../src/lib/sync/schedule.js'
+import { upcomingWeek, syncCalendar, syncWeek } from '../../src/lib/sync/schedule.js'
 import { pruneSnapshots, snapshotEspnLines, syncLines } from '../../src/lib/sync/lines.js'
 import type { SeasonTypeKey } from '../_espn.js'
 
@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // calendar firms up mid-season.
     await syncCalendar(db, season)
 
-    const week = await currentWeek(db, season)
+    const week = await upcomingWeek(db, season)
     if (!week) return res.status(200).json({ ok: true, note: 'No weeks seeded yet' })
 
     const seasonType = week.seasonType as SeasonTypeKey
